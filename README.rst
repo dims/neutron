@@ -7,7 +7,7 @@ identified itself as "Neutron." It aims to tame your (cloud) networking!
 External Resources:
 ===================
 
-The homepage for Neutron is: http://launchpad.net/neutron.  Use this
+The homepage for Neutron is: http://launchpad.net/neutron/.  Use this
 site for asking for help, and filing bugs. Code is available on
 git.openstack.org at <http://git.openstack.org/cgit/openstack/neutron>.
 
