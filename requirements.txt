@@ -34,5 +34,6 @@ stevedore>=1.5.0 # Apache-2.0
 -e git+https://github.com/openstack/oslo.rootwrap.git#egg=oslo.rootwrap
 -e git+https://github.com/openstack/oslo.serialization.git#egg=oslo.serialization
 -e git+https://github.com/openstack/oslo.utils.git#egg=oslo.utils
+-e git+https://github.com/openstack/oslo.service.git#egg=oslo.service
 
 python-novaclient>=2.22.0
