@@ -18,6 +18,7 @@ setuptools*.egg/
 *.sw?
 *~
 /.*
+!.travis.yml
 !/.coveragerc
 !/.gitignore
 !/.gitreview
