@@ -1,5 +1,4 @@
 language: python
-sudo: true
 env:
   - TOXENV=py27
   - TOXENV=py34
