@@ -39,7 +39,6 @@ class DvrLocalRouter(router.RouterInfo):
         self.host = host
 
         self.floating_ips_dict = {}
-        self.snat_iptables_manager = None
         # Linklocal subnet for router and floating IP namespace link
         self.rtr_fip_subnet = None
         self.dist_fip_count = None
@@ -291,13 +290,6 @@ class DvrLocalRouter(router.RouterInfo):
         """Removes rules and routes for SNAT redirection."""
         self._snat_redirect_modify(gateway, sn_port, sn_int, is_add=False)
 
-    def get_gw_port_host(self):
-        host = self.router.get('gw_port_host')
-        if not host:
-            LOG.debug("gw_port_host missing from router: %s",
-                      self.router['id'])
-        return host
-
     def internal_network_added(self, port):
         super(DvrLocalRouter, self).internal_network_added(port)
 
@@ -325,7 +317,8 @@ class DvrLocalRouter(router.RouterInfo):
         if not self.ex_gw_port:
             return
 
-        sn_port = self._map_internal_interfaces(port, self.snat_ports)
+        snat_ports = self.get_snat_interfaces()
+        sn_port = self._map_internal_interfaces(port, snat_ports)
         if not sn_port:
             return
 
@@ -387,27 +380,7 @@ class DvrLocalRouter(router.RouterInfo):
 
     def _handle_router_snat_rules(self, ex_gw_port,
                                   interface_name, action):
-        if not self.snat_iptables_manager:
-            LOG.debug("DVR router: no snat rules to be handled")
-            return
-
-        with self.snat_iptables_manager.defer_apply():
-            self._empty_snat_chains(self.snat_iptables_manager)
-
-            # NOTE DVR doesn't add the jump to float snat like the super class.
-
-            self._add_snat_rules(ex_gw_port, self.snat_iptables_manager,
-                                 interface_name, action)
-
-    def perform_snat_action(self, snat_callback, *args):
-        # NOTE DVR skips this step in a few cases...
-        if not self.get_ex_gw_port():
-            return
-        if self.get_gw_port_host() != self.host:
-            return
-
-        super(DvrLocalRouter,
-              self).perform_snat_action(snat_callback, *args)
+        pass
 
     def process_external(self, agent):
         ex_gw_port = self.get_ex_gw_port()

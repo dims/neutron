@@ -28,6 +28,7 @@ class DvrEdgeRouter(dvr_local_router.DvrLocalRouter):
     def __init__(self, agent, host, *args, **kwargs):
         super(DvrEdgeRouter, self).__init__(agent, host, *args, **kwargs)
         self.snat_namespace = None
+        self.snat_iptables_manager = None
 
     def external_gateway_added(self, ex_gw_port, interface_name):
         super(DvrEdgeRouter, self).external_gateway_added(
@@ -92,7 +93,8 @@ class DvrEdgeRouter(dvr_local_router.DvrLocalRouter):
         if not self.ex_gw_port:
             return
 
-        sn_port = self._map_internal_interfaces(port, self.snat_ports)
+        snat_ports = self.get_snat_interfaces()
+        sn_port = self._map_internal_interfaces(port, snat_ports)
         if not sn_port:
             return
 
@@ -145,4 +147,31 @@ class DvrEdgeRouter(dvr_local_router.DvrLocalRouter):
         return long_name[:self.driver.DEV_NAME_LEN]
 
     def _is_this_snat_host(self):
-        return self.get_gw_port_host() == self.host
+        host = self.router.get('gw_port_host')
+        if not host:
+            LOG.debug("gw_port_host missing from router: %s",
+                      self.router['id'])
+        return host == self.host
+
+    def _handle_router_snat_rules(self, ex_gw_port,
+                                  interface_name, action):
+        if not self.snat_iptables_manager:
+            LOG.debug("DVR router: no snat rules to be handled")
+            return
+
+        with self.snat_iptables_manager.defer_apply():
+            self._empty_snat_chains(self.snat_iptables_manager)
+
+            # NOTE DVR doesn't add the jump to float snat like the super class.
+
+            self._add_snat_rules(ex_gw_port, self.snat_iptables_manager,
+                                 interface_name, action)
+
+    def perform_snat_action(self, snat_callback, *args):
+        # NOTE DVR skips this step in a few cases...
+        if not self.get_ex_gw_port():
+            return
+        if not self._is_this_snat_host():
+            return
+
+        super(DvrEdgeRouter, self).perform_snat_action(snat_callback, *args)
