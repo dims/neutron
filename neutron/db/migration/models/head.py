@@ -28,6 +28,7 @@ from neutron.db import dvr_mac_db  # noqa
 from neutron.db import external_net_db  # noqa
 from neutron.db import extradhcpopt_db  # noqa
 from neutron.db import extraroute_db  # noqa
+from neutron.db import flavors_db  # noqa
 from neutron.db import l3_agentschedulers_db  # noqa
 from neutron.db import l3_attrs_db  # noqa
 from neutron.db import l3_db  # noqa
@@ -40,6 +41,7 @@ from neutron.db import models_v2  # noqa
 from neutron.db import portbindings_db  # noqa
 from neutron.db import portsecurity_db  # noqa
 from neutron.db import quota_db  # noqa
+from neutron.db import rbac_db_models  # noqa
 from neutron.db import securitygroups_db  # noqa
 from neutron.db import servicetype_db  # noqa
 from neutron.ipam.drivers.neutrondb_ipam import db_models  # noqa

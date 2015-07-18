@@ -17,7 +17,6 @@ import copy
 
 import netaddr
 from oslo_config import cfg
-from oslo_db import api as oslo_db_api
 from oslo_log import log as logging
 from oslo_policy import policy as oslo_policy
 from oslo_utils import excutils
@@ -187,6 +186,7 @@ class Controller(object):
 
     def __getattr__(self, name):
         if name in self._member_actions:
+            @db_api.retry_db_errors
             def _handle_action(request, id, **kwargs):
                 arg_list = [request.context, id]
                 # Ensure policy engine is initialized
@@ -197,7 +197,7 @@ class Controller(object):
                 except oslo_policy.PolicyNotAuthorized:
                     msg = _('The resource could not be found.')
                     raise webob.exc.HTTPNotFound(msg)
-                body = kwargs.pop('body', None)
+                body = copy.deepcopy(kwargs.pop('body', None))
                 # Explicit comparison with None to distinguish from {}
                 if body is not None:
                     arg_list.append(body)
@@ -383,8 +383,7 @@ class Controller(object):
                 # We need a way for ensuring that if it has been created,
                 # it is then deleted
 
-    @oslo_db_api.wrap_db_retry(max_retries=db_api.MAX_RETRIES,
-                               retry_on_deadlock=True)
+    @db_api.retry_db_errors
     def create(self, request, body=None, **kwargs):
         """Creates a new instance of the requested entity."""
         parent_id = kwargs.get(self._parent_id_name)
@@ -414,6 +413,9 @@ class Controller(object):
                            action,
                            item[self._resource],
                            pluralized=self._collection)
+            if 'tenant_id' not in item[self._resource]:
+                # no tenant_id - no quota check
+                continue
             try:
                 tenant_id = item[self._resource]['tenant_id']
                 count = quota.QUOTAS.count(request.context, self._resource,
@@ -470,8 +472,7 @@ class Controller(object):
                 return notify({self._resource: self._view(request.context,
                                                           obj)})
 
-    @oslo_db_api.wrap_db_retry(max_retries=db_api.MAX_RETRIES,
-                               retry_on_deadlock=True)
+    @db_api.retry_db_errors
     def delete(self, request, id, **kwargs):
         """Deletes the specified entity."""
         self._notifier.info(request.context,
@@ -506,8 +507,7 @@ class Controller(object):
                                      result,
                                      notifier_method)
 
-    @oslo_db_api.wrap_db_retry(max_retries=db_api.MAX_RETRIES,
-                               retry_on_deadlock=True)
+    @db_api.retry_db_errors
     def update(self, request, id, body=None, **kwargs):
         """Updates the specified entity's attributes."""
         parent_id = kwargs.get(self._parent_id_name)
@@ -571,8 +571,7 @@ class Controller(object):
         return result
 
     @staticmethod
-    def _populate_tenant_id(context, res_dict, is_create):
-
+    def _populate_tenant_id(context, res_dict, attr_info, is_create):
         if (('tenant_id' in res_dict and
              res_dict['tenant_id'] != context.tenant_id and
              not context.is_admin)):
@@ -583,9 +582,9 @@ class Controller(object):
         if is_create and 'tenant_id' not in res_dict:
             if context.tenant_id:
                 res_dict['tenant_id'] = context.tenant_id
-            else:
+            elif 'tenant_id' in attr_info:
                 msg = _("Running without keystone AuthN requires "
-                        " that tenant_id is specified")
+                        "that tenant_id is specified")
                 raise webob.exc.HTTPBadRequest(msg)
 
     @staticmethod
@@ -627,7 +626,7 @@ class Controller(object):
             msg = _("Unable to find '%s' in request body") % resource
             raise webob.exc.HTTPBadRequest(msg)
 
-        Controller._populate_tenant_id(context, res_dict, is_create)
+        Controller._populate_tenant_id(context, res_dict, attr_info, is_create)
         Controller._verify_attributes(res_dict, attr_info)
 
         if is_create:  # POST

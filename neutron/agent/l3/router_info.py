@@ -45,7 +45,6 @@ class RouterInfo(object):
         self.router_id = router_id
         self.ex_gw_port = None
         self._snat_enabled = None
-        self._snat_action = None
         self.internal_ports = []
         self.floating_ips = set()
         # Invoke the setter for establishing initial SNAT action
@@ -97,13 +96,6 @@ class RouterInfo(object):
             return
         # enable_snat by default if it wasn't specified by plugin
         self._snat_enabled = self._router.get('enable_snat', True)
-        # Set a SNAT action for the router
-        if self._router.get('gw_port'):
-            self._snat_action = ('add_rules' if self._snat_enabled
-                                 else 'remove_rules')
-        elif self.ex_gw_port:
-            # Gateway port was removed, remove rules
-            self._snat_action = 'remove_rules'
 
     @property
     def is_ha(self):
@@ -118,14 +110,6 @@ class RouterInfo(object):
 
     def get_external_device_interface_name(self, ex_gw_port):
         return self.get_external_device_name(ex_gw_port['id'])
-
-    def perform_snat_action(self, snat_callback, *args):
-        # Process SNAT rules for attached subnets
-        if self._snat_action:
-            snat_callback(self._router.get('gw_port'),
-                          *args,
-                          action=self._snat_action)
-        self._snat_action = None
 
     def _update_routing_table(self, operation, route):
         cmd = ['ip', 'route', operation, 'to', route['destination'],
@@ -534,27 +518,37 @@ class RouterInfo(object):
                                prefix=EXTERNAL_DEV_PREFIX)
 
         # Process SNAT rules for external gateway
-        self.perform_snat_action(self._handle_router_snat_rules,
-                                 interface_name)
+        gw_port = self._router.get('gw_port')
+        self._handle_router_snat_rules(gw_port, interface_name)
 
     def external_gateway_nat_rules(self, ex_gw_ip, interface_name):
-        mark = self.agent_conf.external_ingress_mark
-        rules = [('POSTROUTING', '! -i %(interface_name)s '
-                  '! -o %(interface_name)s -m conntrack ! '
-                  '--ctstate DNAT -j ACCEPT' %
-                  {'interface_name': interface_name}),
-                 ('snat', '-o %s -j SNAT --to-source %s' %
-                  (interface_name, ex_gw_ip)),
-                 ('snat', '-m mark ! --mark %s '
-                  '-m conntrack --ctstate DNAT '
-                  '-j SNAT --to-source %s' % (mark, ex_gw_ip))]
-        return rules
+        dont_snat_traffic_to_internal_ports_if_not_to_floating_ip = (
+            'POSTROUTING', '! -i %(interface_name)s '
+                           '! -o %(interface_name)s -m conntrack ! '
+                           '--ctstate DNAT -j ACCEPT' %
+                           {'interface_name': interface_name})
+
+        snat_normal_external_traffic = (
+            'snat', '-o %s -j SNAT --to-source %s' %
+                    (interface_name, ex_gw_ip))
+
+        # Makes replies come back through the router to reverse DNAT
+        ext_in_mark = self.agent_conf.external_ingress_mark
+        snat_internal_traffic_to_floating_ip = (
+            'snat', '-m mark ! --mark %s '
+                    '-m conntrack --ctstate DNAT '
+                    '-j SNAT --to-source %s' % (ext_in_mark, ex_gw_ip))
+
+        return [dont_snat_traffic_to_internal_ports_if_not_to_floating_ip,
+                snat_normal_external_traffic,
+                snat_internal_traffic_to_floating_ip]
 
     def external_gateway_mangle_rules(self, interface_name):
         mark = self.agent_conf.external_ingress_mark
-        rules = [('mark', '-i %s -j MARK --set-xmark %s/%s' %
-                 (interface_name, mark, EXTERNAL_INGRESS_MARK_MASK))]
-        return rules
+        mark_packets_entering_external_gateway_port = (
+            'mark', '-i %s -j MARK --set-xmark %s/%s' %
+                    (interface_name, mark, EXTERNAL_INGRESS_MARK_MASK))
+        return [mark_packets_entering_external_gateway_port]
 
     def _empty_snat_chains(self, iptables_manager):
         iptables_manager.ipv4['nat'].empty_chain('POSTROUTING')
@@ -562,8 +556,8 @@ class RouterInfo(object):
         iptables_manager.ipv4['mangle'].empty_chain('mark')
 
     def _add_snat_rules(self, ex_gw_port, iptables_manager,
-                        interface_name, action):
-        if action == 'add_rules' and ex_gw_port:
+                        interface_name):
+        if self._snat_enabled and ex_gw_port:
             # ex_gw_port should not be None in this case
             # NAT rules are added only if ex_gw_port has an IPv4 address
             for ip_addr in ex_gw_port['fixed_ips']:
@@ -578,16 +572,14 @@ class RouterInfo(object):
                         iptables_manager.ipv4['mangle'].add_rule(*rule)
                     break
 
-    def _handle_router_snat_rules(self, ex_gw_port,
-                                  interface_name, action):
+    def _handle_router_snat_rules(self, ex_gw_port, interface_name):
         self._empty_snat_chains(self.iptables_manager)
 
         self.iptables_manager.ipv4['nat'].add_rule('snat', '-j $float-snat')
 
         self._add_snat_rules(ex_gw_port,
                              self.iptables_manager,
-                             interface_name,
-                             action)
+                             interface_name)
 
     def process_external(self, agent):
         existing_floating_ips = self.floating_ips
@@ -633,4 +625,5 @@ class RouterInfo(object):
 
         # Update ex_gw_port and enable_snat on the router info cache
         self.ex_gw_port = self.get_ex_gw_port()
+        # TODO(Carl) FWaaS uses this.  Why is it set after processing is done?
         self.enable_snat = self.router.get('enable_snat')
