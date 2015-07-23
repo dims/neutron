@@ -30,7 +30,6 @@ LOG = logging.getLogger(__name__)
 INTERNAL_DEV_PREFIX = namespaces.INTERNAL_DEV_PREFIX
 EXTERNAL_DEV_PREFIX = namespaces.EXTERNAL_DEV_PREFIX
 
-EXTERNAL_INGRESS_MARK_MASK = '0xffffffff'
 FLOATINGIP_STATUS_NOCHANGE = object()
 
 
@@ -535,9 +534,10 @@ class RouterInfo(object):
         # Makes replies come back through the router to reverse DNAT
         ext_in_mark = self.agent_conf.external_ingress_mark
         snat_internal_traffic_to_floating_ip = (
-            'snat', '-m mark ! --mark %s '
+            'snat', '-m mark ! --mark %s/%s '
                     '-m conntrack --ctstate DNAT '
-                    '-j SNAT --to-source %s' % (ext_in_mark, ex_gw_ip))
+                    '-j SNAT --to-source %s'
+                    % (ext_in_mark, l3_constants.ROUTER_MARK_MASK, ex_gw_ip))
 
         return [dont_snat_traffic_to_internal_ports_if_not_to_floating_ip,
                 snat_normal_external_traffic,
@@ -547,7 +547,7 @@ class RouterInfo(object):
         mark = self.agent_conf.external_ingress_mark
         mark_packets_entering_external_gateway_port = (
             'mark', '-i %s -j MARK --set-xmark %s/%s' %
-                    (interface_name, mark, EXTERNAL_INGRESS_MARK_MASK))
+                    (interface_name, mark, l3_constants.ROUTER_MARK_MASK))
         return [mark_packets_entering_external_gateway_port]
 
     def _empty_snat_chains(self, iptables_manager):
@@ -582,13 +582,12 @@ class RouterInfo(object):
                              interface_name)
 
     def process_external(self, agent):
+        fip_statuses = {}
         existing_floating_ips = self.floating_ips
         try:
             with self.iptables_manager.defer_apply():
                 ex_gw_port = self.get_ex_gw_port()
                 self._process_external_gateway(ex_gw_port)
-                # TODO(Carl) Return after setting existing_floating_ips and
-                # still call update_fip_statuses?
                 if not ex_gw_port:
                     return
 
@@ -606,8 +605,9 @@ class RouterInfo(object):
                 # All floating IPs must be put in error state
                 LOG.exception(e)
                 fip_statuses = self.put_fips_in_error_state()
-
-        agent.update_fip_statuses(self, existing_floating_ips, fip_statuses)
+        finally:
+            agent.update_fip_statuses(
+                self, existing_floating_ips, fip_statuses)
 
     @common_utils.exception_logger()
     def process(self, agent):
