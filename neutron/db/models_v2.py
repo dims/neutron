@@ -133,7 +133,8 @@ class Port(model_base.BASEV2, HasId, HasTenant):
     name = sa.Column(sa.String(attr.NAME_MAX_LEN))
     network_id = sa.Column(sa.String(36), sa.ForeignKey("networks.id"),
                            nullable=False)
-    fixed_ips = orm.relationship(IPAllocation, backref='port', lazy='joined')
+    fixed_ips = orm.relationship(IPAllocation, backref='port', lazy='joined',
+                                 passive_deletes='all')
     mac_address = sa.Column(sa.String(32), nullable=False)
     admin_state_up = sa.Column(sa.Boolean(), nullable=False)
     status = sa.Column(sa.String(16), nullable=False)
@@ -178,6 +179,7 @@ class DNSNameServer(model_base.BASEV2):
                           sa.ForeignKey('subnets.id',
                                         ondelete="CASCADE"),
                           primary_key=True)
+    order = sa.Column(sa.Integer, nullable=False, server_default='0')
 
 
 class Subnet(model_base.BASEV2, HasId, HasTenant):
@@ -201,6 +203,7 @@ class Subnet(model_base.BASEV2, HasId, HasTenant):
     dns_nameservers = orm.relationship(DNSNameServer,
                                        backref='subnet',
                                        cascade='all, delete, delete-orphan',
+                                       order_by=DNSNameServer.order,
                                        lazy='joined')
     routes = orm.relationship(SubnetRoute,
                               backref='subnet',
@@ -241,6 +244,7 @@ class SubnetPool(model_base.BASEV2, HasId, HasTenant):
     max_prefixlen = sa.Column(sa.Integer, nullable=False)
     shared = sa.Column(sa.Boolean, nullable=False)
     default_quota = sa.Column(sa.Integer, nullable=True)
+    hash = sa.Column(sa.String(36), nullable=False, server_default='')
     prefixes = orm.relationship(SubnetPoolPrefix,
                                 backref='subnetpools',
                                 cascade='all, delete, delete-orphan',

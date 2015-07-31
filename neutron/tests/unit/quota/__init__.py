@@ -1,5 +1,4 @@
-# Copyright 2015 Cisco Systems, Inc.
-# All rights reserved.
+# Copyright (c) 2015 OpenStack Foundation.  All rights reserved.
 #
 #    Licensed under the Apache License, Version 2.0 (the "License"); you may
 #    not use this file except in compliance with the License. You may obtain
@@ -13,12 +12,17 @@
 #    License for the specific language governing permissions and limitations
 #    under the License.
 
-"""
-ML2 Mechanism Driver for Cisco Nexus1000V distributed virtual switches.
-"""
+import sqlalchemy as sa
 
-from networking_cisco.plugins.ml2.drivers.cisco.n1kv import mech_cisco_n1kv
+from neutron.db import model_base
+from neutron.db import models_v2
+
+# Model classes for test resources
 
 
-class N1KVMechanismDriver(mech_cisco_n1kv.N1KVMechanismDriver):
-    pass
+class MehModel(model_base.BASEV2, models_v2.HasTenant):
+    meh = sa.Column(sa.String(8), primary_key=True)
+
+
+class OtherMehModel(model_base.BASEV2, models_v2.HasTenant):
+    othermeh = sa.Column(sa.String(8), primary_key=True)
