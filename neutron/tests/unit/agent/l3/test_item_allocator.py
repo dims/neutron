@@ -1,5 +1,4 @@
-# Copyright (c) 2013 OpenStack Foundation
-# All Rights Reserved.
+# Copyright 2014 Hewlett-Packard Development Company, L.P.
 #
 #    Licensed under the Apache License, Version 2.0 (the "License"); you may
 #    not use this file except in compliance with the License. You may obtain
@@ -13,10 +12,18 @@
 #    License for the specific language governing permissions and limitations
 #    under the License.
 
-"""
-ML2 Mechanism Driver for Cisco NCS.
-"""
+from neutron.agent.l3 import item_allocator as ia
+from neutron.tests import base
 
-from networking_cisco.plugins.ml2.drivers.cisco.ncs import driver as cisco
 
-NCSMechanismDriver = cisco.NCSMechanismDriver
+class TestItemAllocator(base.BaseTestCase):
+    def setUp(self):
+        super(TestItemAllocator, self).setUp()
+
+    def test__init__(self):
+        test_pool = set(s for s in range(32768, 40000))
+        a = ia.ItemAllocator('/file', object, test_pool)
+        self.assertEqual('/file', a.state_file)
+        self.assertEqual({}, a.allocations)
+        self.assertEqual(object, a.ItemClass)
+        self.assertEqual(test_pool, a.pool)

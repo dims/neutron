@@ -14,7 +14,6 @@
 #    under the License.
 
 import hashlib
-import logging as std_logging
 import signal
 import sys
 import time
@@ -1660,7 +1659,7 @@ class OVSNeutronAgent(sg_rpc.SecurityGroupAgentRpcCallbackMixin,
             self.conf.reload_config_files()
             config.setup_logging()
             LOG.debug('Full set of CONF:')
-            self.conf.log_opt_values(LOG, std_logging.DEBUG)
+            self.conf.log_opt_values(LOG, logging.DEBUG)
             self.catch_sighup = False
         return self.run_daemon_loop
 
@@ -1717,6 +1716,15 @@ def create_agent_config_map(config):
     return kwargs
 
 
+def validate_local_ip(local_ip):
+    """Verify if the ip exists on the agent's host."""
+    if not ip_lib.IPWrapper().get_device_by_ip(local_ip):
+        LOG.error(_LE("Tunneling can't be enabled with invalid local_ip '%s'."
+                      " IP couldn't be found on this host's interfaces."),
+                  local_ip)
+        raise SystemExit(1)
+
+
 def prepare_xen_compute():
     is_xen_compute_host = 'rootwrap-xen-dom0' in cfg.CONF.AGENT.root_helper
     if is_xen_compute_host:
@@ -1733,6 +1741,7 @@ def main(bridge_classes):
         LOG.exception(_LE("Agent failed to create agent config map"))
         raise SystemExit(1)
     prepare_xen_compute()
+    validate_local_ip(agent_config['local_ip'])
     try:
         agent = OVSNeutronAgent(bridge_classes, **agent_config)
     except (RuntimeError, ValueError) as e:

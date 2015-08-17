@@ -40,6 +40,7 @@ from neutron.db import l3_agentschedulers_db
 from neutron.db import l3_attrs_db
 from neutron.db import l3_db
 from neutron.db import l3_dvr_db
+from neutron.db import l3_dvrscheduler_db
 from neutron.extensions import external_net
 from neutron.extensions import l3
 from neutron.extensions import portbindings
@@ -301,8 +302,8 @@ class TestL3NatServicePlugin(common_db_mixin.CommonDbMixin,
 # A L3 routing with L3 agent scheduling service plugin class for tests with
 # plugins that delegate away L3 routing functionality
 class TestL3NatAgentSchedulingServicePlugin(TestL3NatServicePlugin,
-                                            l3_agentschedulers_db.
-                                            L3AgentSchedulerDbMixin):
+                                            l3_dvrscheduler_db.
+                                            L3_DVRsch_db_mixin):
 
     supported_extension_aliases = ["router", "l3_agent_scheduler"]
 
@@ -326,7 +327,7 @@ class L3NatTestCaseMixin(object):
             data['router']['admin_state_up'] = admin_state_up
         for arg in (('admin_state_up', 'tenant_id') + (arg_list or ())):
             # Arg must be present and not empty
-            if kwargs.get(arg):
+            if arg in kwargs:
                 data['router'][arg] = kwargs[arg]
         router_req = self.new_create_request('routers', data, fmt)
         if set_context and tenant_id:

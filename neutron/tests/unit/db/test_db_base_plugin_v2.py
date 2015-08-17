@@ -4167,6 +4167,19 @@ class TestSubnetsV2(NeutronDbPluginV2TestCase):
                 self.assertEqual(res.status_int,
                                  webob.exc.HTTPClientError.code)
 
+    def _verify_updated_subnet_allocation_pools(self, res, with_gateway_ip):
+        res = self.deserialize(self.fmt, res)
+        self.assertEqual(len(res['subnet']['allocation_pools']), 2)
+        res_vals = (
+            list(res['subnet']['allocation_pools'][0].values()) +
+            list(res['subnet']['allocation_pools'][1].values())
+        )
+        for pool_val in ['10', '20', '30', '40']:
+            self.assertTrue('192.168.0.%s' % (pool_val) in res_vals)
+        if with_gateway_ip:
+            self.assertEqual((res['subnet']['gateway_ip']),
+                             '192.168.0.9')
+
     def _test_update_subnet_allocation_pools(self, with_gateway_ip=False):
         """Test that we can successfully update with sane params.
 
@@ -4187,22 +4200,17 @@ class TestSubnetsV2(NeutronDbPluginV2TestCase):
                     data['subnet']['gateway_ip'] = '192.168.0.9'
                 req = self.new_update_request('subnets', data,
                                               subnet['subnet']['id'])
-                #check res code but then do GET on subnet for verification
+                #check res code and contents
                 res = req.get_response(self.api)
                 self.assertEqual(res.status_code, 200)
+                self._verify_updated_subnet_allocation_pools(res,
+                                                             with_gateway_ip)
+                #GET subnet to verify DB updated correctly
                 req = self.new_show_request('subnets', subnet['subnet']['id'],
                                             self.fmt)
-                res = self.deserialize(self.fmt, req.get_response(self.api))
-                self.assertEqual(len(res['subnet']['allocation_pools']), 2)
-                res_vals = (
-                    list(res['subnet']['allocation_pools'][0].values()) +
-                    list(res['subnet']['allocation_pools'][1].values())
-                )
-                for pool_val in ['10', '20', '30', '40']:
-                    self.assertTrue('192.168.0.%s' % (pool_val) in res_vals)
-                if with_gateway_ip:
-                    self.assertEqual((res['subnet']['gateway_ip']),
-                                     '192.168.0.9')
+                res = req.get_response(self.api)
+                self._verify_updated_subnet_allocation_pools(res,
+                                                             with_gateway_ip)
 
     def test_update_subnet_allocation_pools(self):
         self._test_update_subnet_allocation_pools()
@@ -4239,6 +4247,47 @@ class TestSubnetsV2(NeutronDbPluginV2TestCase):
                              cidr='10.0.0.0/24') as subnet:
                 data = {'subnet': {'allocation_pools': [
                         {'start': '10.0.0.1', 'end': '10.0.0.254'}]}}
+                req = self.new_update_request('subnets', data,
+                                              subnet['subnet']['id'])
+                res = req.get_response(self.api)
+                self.assertEqual(res.status_int,
+                                 webob.exc.HTTPConflict.code)
+
+    def test_update_subnet_allocation_pools_invalid_returns_400(self):
+        allocation_pools = [{'start': '10.0.0.2', 'end': '10.0.0.254'}]
+        with self.network() as network:
+            with self.subnet(network=network,
+                             allocation_pools=allocation_pools,
+                             cidr='10.0.0.0/24') as subnet:
+                # Check allocation pools
+                invalid_pools = [[{'end': '10.0.0.254'}],
+                                 [{'start': '10.0.0.254'}],
+                                 [{'start': '1000.0.0.254'}],
+                                 [{'start': '10.0.0.2', 'end': '10.0.0.254'},
+                                  {'end': '10.0.0.254'}],
+                                 None,
+                                 [{'start': '10.0.0.200', 'end': '10.0.3.20'}],
+                                 [{'start': '10.0.2.250', 'end': '10.0.3.5'}],
+                                 [{'start': '10.0.0.0', 'end': '10.0.0.50'}],
+                                 [{'start': '10.0.2.10', 'end': '10.0.2.5'}],
+                                 [{'start': 'fe80::2', 'end': 'fe80::ffff'}]]
+                for pool in invalid_pools:
+                    data = {'subnet': {'allocation_pools': pool}}
+                    req = self.new_update_request('subnets', data,
+                                                  subnet['subnet']['id'])
+                    res = req.get_response(self.api)
+                    self.assertEqual(res.status_int,
+                                     webob.exc.HTTPClientError.code)
+
+    def test_update_subnet_allocation_pools_overlapping_returns_409(self):
+        allocation_pools = [{'start': '10.0.0.2', 'end': '10.0.0.254'}]
+        with self.network() as network:
+            with self.subnet(network=network,
+                             allocation_pools=allocation_pools,
+                             cidr='10.0.0.0/24') as subnet:
+                data = {'subnet': {'allocation_pools': [
+                        {'start': '10.0.0.20', 'end': '10.0.0.40'},
+                        {'start': '10.0.0.30', 'end': '10.0.0.50'}]}}
                 req = self.new_update_request('subnets', data,
                                               subnet['subnet']['id'])
                 res = req.get_response(self.api)

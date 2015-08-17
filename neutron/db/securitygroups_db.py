@@ -430,6 +430,7 @@ class SecurityGroupDbMixin(ext_sg.SecurityGroupPluginBase):
         ip_proto = self._get_ip_proto_number(rule['protocol'])
         if ip_proto in [constants.PROTO_NUM_TCP, constants.PROTO_NUM_UDP]:
             if (rule['port_range_min'] is not None and
+                rule['port_range_max'] is not None and
                 rule['port_range_min'] <= rule['port_range_max']):
                 pass
             else:
@@ -437,7 +438,7 @@ class SecurityGroupDbMixin(ext_sg.SecurityGroupPluginBase):
         elif ip_proto == constants.PROTO_NUM_ICMP:
             for attr, field in [('port_range_min', 'type'),
                                 ('port_range_max', 'code')]:
-                if rule[attr] > 255:
+                if rule[attr] is not None and rule[attr] > 255:
                     raise ext_sg.SecurityGroupInvalidIcmpValue(
                         field=field, attr=attr, value=rule[attr])
             if (rule['port_range_min'] is None and
@@ -709,11 +710,8 @@ class SecurityGroupDbMixin(ext_sg.SecurityGroupPluginBase):
         tenant_id = self._get_tenant_id_for_create(context,
                                                    port['port'])
         default_sg = self._ensure_default_security_group(context, tenant_id)
-        if attributes.is_attr_set(port['port'].get(ext_sg.SECURITYGROUPS)):
-            sgids = port['port'].get(ext_sg.SECURITYGROUPS)
-        else:
-            sgids = [default_sg]
-        port['port'][ext_sg.SECURITYGROUPS] = sgids
+        if not attributes.is_attr_set(port['port'].get(ext_sg.SECURITYGROUPS)):
+            port['port'][ext_sg.SECURITYGROUPS] = [default_sg]
 
     def _check_update_deletes_security_groups(self, port):
         """Return True if port has as a security group and it's value

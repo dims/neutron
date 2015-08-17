@@ -34,7 +34,6 @@ from neutron.common import constants
 from neutron.common import exceptions as n_exc
 from neutron.common import ipv6_utils
 from neutron.common import utils
-from neutron import context as ctx
 from neutron.db import api as db_api
 from neutron.db import db_base_plugin_common
 from neutron.db import ipam_non_pluggable_backend
@@ -471,7 +470,7 @@ class NeutronDbPluginV2(db_base_plugin_common.DbBasePluginCommon,
             gw_ports = self._get_router_gw_ports_by_network(context,
                     network['id'])
             router_ids = [p['device_id'] for p in gw_ports]
-            ctx_admin = ctx.get_admin_context()
+            ctx_admin = context.elevated()
             ext_subnets_dict = {s['id']: s for s in network['subnets']}
             for id in router_ids:
                 router = l3plugin.get_router(ctx_admin, id)
@@ -590,9 +589,8 @@ class NeutronDbPluginV2(db_base_plugin_common.DbBasePluginCommon,
 
     def _update_allocation_pools(self, subnet):
         """Gets new allocation pools and formats them correctly"""
-        allocation_pools = self.ipam.generate_allocation_pools(
-                                    subnet['cidr'],
-                                    subnet['gateway_ip'])
+        allocation_pools = self.ipam.generate_pools(subnet['cidr'],
+                                                    subnet['gateway_ip'])
         return [{'start': str(netaddr.IPAddress(p.first,
                                                 subnet['ip_version'])),
                  'end': str(netaddr.IPAddress(p.last, subnet['ip_version']))}
@@ -619,12 +617,6 @@ class NeutronDbPluginV2(db_base_plugin_common.DbBasePluginCommon,
         db_pools = [netaddr.IPRange(p['first_ip'], p['last_ip'])
                     for p in db_subnet.allocation_pools]
 
-        range_pools = None
-        if s.get('allocation_pools') is not None:
-            # Convert allocation pools to IPRange to simplify future checks
-            range_pools = self.ipam.pools_to_ip_range(s['allocation_pools'])
-            s['allocation_pools'] = range_pools
-
         update_ports_needed = False
         if new_cidr and ipv6_utils.is_ipv6_pd_enabled(s):
             # This is an ipv6 prefix delegation-enabled subnet being given an
@@ -635,6 +627,13 @@ class NeutronDbPluginV2(db_base_plugin_common.DbBasePluginCommon,
             # Update gateway_ip and allocation pools based on new cidr
             s['gateway_ip'] = utils.get_first_host_ip(net, s['ip_version'])
             s['allocation_pools'] = self._update_allocation_pools(s)
+
+        range_pools = None
+        if s.get('allocation_pools') is not None:
+            # Convert allocation pools to IPRange to simplify future checks
+            range_pools = self.ipam.pools_to_ip_range(s['allocation_pools'])
+            self.ipam.validate_allocation_pools(range_pools, s['cidr'])
+            s['allocation_pools'] = range_pools
 
         # If either gateway_ip or allocation_pools were specified
         gateway_ip = s.get('gateway_ip')
@@ -767,6 +766,10 @@ class NeutronDbPluginV2(db_base_plugin_common.DbBasePluginCommon,
     def get_subnets_count(self, context, filters=None):
         return self._get_collection_count(context, models_v2.Subnet,
                                           filters=filters)
+
+    def get_subnets_by_network(self, context, network_id):
+        return [self._make_subnet_dict(subnet_db) for subnet_db in
+                self._get_subnets_by_network(context, network_id)]
 
     def _create_subnetpool_prefix(self, context, cidr, subnetpool_id):
         prefix_args = {'cidr': cidr, 'subnetpool_id': subnetpool_id}
@@ -1133,7 +1136,7 @@ class NeutronDbPluginV2(db_base_plugin_common.DbBasePluginCommon,
             if device_id:
                 if hasattr(self, 'get_router'):
                     try:
-                        ctx_admin = ctx.get_admin_context()
+                        ctx_admin = context.elevated()
                         router = self.get_router(ctx_admin, device_id)
                     except l3.RouterNotFound:
                         return
@@ -1143,7 +1146,7 @@ class NeutronDbPluginV2(db_base_plugin_common.DbBasePluginCommon,
                             service_constants.L3_ROUTER_NAT))
                     if l3plugin:
                         try:
-                            ctx_admin = ctx.get_admin_context()
+                            ctx_admin = context.elevated()
                             router = l3plugin.get_router(ctx_admin,
                                                          device_id)
                         except l3.RouterNotFound:
