@@ -1,6 +1,5 @@
-# Copyright 2013 VMware, Inc.
-#
-# All Rights Reserved
+# Copyright (c) 2015 Red Hat, Inc.
+# All Rights Reserved.
 #
 #    Licensed under the Apache License, Version 2.0 (the "License"); you may
 #    not use this file except in compliance with the License. You may obtain
@@ -13,24 +12,16 @@
 #    WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied. See the
 #    License for the specific language governing permissions and limitations
 #    under the License.
-#
-# TODO(arosen): This is deprecated in Juno, and
-# to be removed in Kxxxx.
 
-from neutron.plugins.vmware.extensions import qos
+from neutron.agent.linux import utils as agent_utils
 
 
-class Nvp_qos(qos.Qos):
-    """(Deprecated) Port Queue extension."""
+def wait_until_bandwidth_limit_rule_applied(bridge, port_vif, rule):
+    def _bandwidth_limit_rule_applied():
+        bw_rule = bridge.get_egress_bw_limit_for_port(port_vif)
+        expected = None, None
+        if rule:
+            expected = rule.max_kbps, rule.max_burst_kbps
+        return bw_rule == expected
 
-    @classmethod
-    def get_name(cls):
-        return "nvp-qos"
-
-    @classmethod
-    def get_alias(cls):
-        return "nvp-qos"
-
-    @classmethod
-    def get_description(cls):
-        return "NVP QoS extension (deprecated)."
+    agent_utils.wait_until_true(_bandwidth_limit_rule_applied)
