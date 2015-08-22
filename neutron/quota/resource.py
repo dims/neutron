@@ -224,6 +224,7 @@ class TrackedResource(BaseResource):
                   {'tenant_id': tenant_id, 'resource': self.name})
         return usage_info
 
+    @lockutils.synchronized('dirty_tenants')
     def resync(self, context, tenant_id):
         if tenant_id not in self._out_of_sync_tenants:
             return
@@ -232,12 +233,10 @@ class TrackedResource(BaseResource):
                   {'tenant_id': tenant_id, 'resource': self.name})
         in_use = context.session.query(self._model_class).filter_by(
             tenant_id=tenant_id).count()
-        reservations = quota_api.get_reservations_for_resources(
-            context, tenant_id, [self.name])
-        reserved = reservations.get(self.name, 0)
         # Update quota usage
-        return self._resync(context, tenant_id, in_use, reserved)
+        return self._resync(context, tenant_id, in_use, reserved=0)
 
+    @lockutils.synchronized('dirty_tenants')
     def count(self, context, _plugin, tenant_id, resync_usage=False):
         """Return the current usage count for the resource.
 
@@ -266,21 +265,20 @@ class TrackedResource(BaseResource):
                                   'tenant_id': tenant_id})
             in_use = context.session.query(self._model_class).filter_by(
                 tenant_id=tenant_id).count()
-            reservations = quota_api.get_reservations_for_resources(
-                context, tenant_id, [self.name])
-            reserved = reservations.get(self.name, 0)
 
             # Update quota usage, if requested (by default do not do that, as
             # typically one counts before adding a record, and that would mark
             # the usage counter as dirty again)
             if resync_usage or not usage_info:
                 usage_info = self._resync(context, tenant_id,
-                                          in_use, reserved)
+                                          in_use, reserved=0)
             else:
+                # NOTE(salv-orlando): Passing 0 for reserved amount as
+                # reservations are currently not supported
                 usage_info = quota_api.QuotaUsageInfo(usage_info.resource,
                                                       usage_info.tenant_id,
                                                       in_use,
-                                                      reserved,
+                                                      0,
                                                       usage_info.dirty)
 
             LOG.debug(("Quota usage for %(resource)s was recalculated. "

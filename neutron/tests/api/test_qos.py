@@ -13,6 +13,7 @@
 #    under the License.
 
 from tempest_lib import exceptions
+import testtools
 
 from neutron.services.qos import qos_consts
 from neutron.tests.api import base
@@ -285,6 +286,20 @@ class QosTestJSON(base.BaseAdminNetworkTest):
         self._disassociate_port(port['id'])
         self.admin_client.delete_qos_policy(policy['id'])
 
+    @test.attr(type='smoke')
+    @test.idempotent_id('a2a5849b-dd06-4b18-9664-0b6828a1fc27')
+    def test_qos_policy_delete_with_rules(self):
+        policy = self.create_qos_policy(name='test-policy',
+                                        description='test policy',
+                                        shared=False)
+        self.admin_client.create_bandwidth_limit_rule(
+            policy['id'], 200, 1337)['bandwidth_limit_rule']
+
+        self.admin_client.delete_qos_policy(policy['id'])
+
+        with testtools.ExpectedException(exceptions.NotFound):
+            self.admin_client.show_qos_policy(policy['id'])
+
 
 class QosBandwidthLimitRuleTestJSON(base.BaseAdminNetworkTest):
     @classmethod
@@ -390,13 +405,17 @@ class QosBandwidthLimitRuleTestJSON(base.BaseAdminNetworkTest):
             'policy', 200, 1337)
 
     @test.attr(type='smoke')
-    @test.idempotent_id('3ba4abf9-7976-4eaf-a5d0-a934a6e09b2d')
-    def test_rule_association_nonshared_policy(self):
-        policy = self.create_qos_policy(name='test-policy',
-                                        description='test policy',
-                                        shared=False,
-                                        tenant_id='tenant-id')
+    @test.idempotent_id('eed8e2a6-22da-421b-89b9-935a2c1a1b50')
+    def test_policy_create_forbidden_for_regular_tenants(self):
         self.assertRaises(
-            exceptions.NotFound,
+            exceptions.Forbidden,
+            self.client.create_qos_policy,
+            'test-policy', 'test policy', False)
+
+    @test.attr(type='smoke')
+    @test.idempotent_id('a4a2e7ad-786f-4927-a85a-e545a93bd274')
+    def test_rule_create_forbidden_for_regular_tenants(self):
+        self.assertRaises(
+            exceptions.Forbidden,
             self.client.create_bandwidth_limit_rule,
-            policy['id'], 200, 1337)
+            'policy', 1, 2)
