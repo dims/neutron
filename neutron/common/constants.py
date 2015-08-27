@@ -90,15 +90,12 @@ FLOODING_ENTRY = ('00:00:00:00:00:00', '0.0.0.0')
 AGENT_TYPE_DHCP = 'DHCP agent'
 AGENT_TYPE_OVS = 'Open vSwitch agent'
 AGENT_TYPE_LINUXBRIDGE = 'Linux bridge agent'
-AGENT_TYPE_HYPERV = 'HyperV agent'
 AGENT_TYPE_NEC = 'NEC plugin agent'
 AGENT_TYPE_OFA = 'OFA driver agent'
 AGENT_TYPE_L3 = 'L3 agent'
 AGENT_TYPE_LOADBALANCER = 'Loadbalancer agent'
-AGENT_TYPE_MLNX = 'Mellanox plugin agent'
 AGENT_TYPE_METERING = 'Metering agent'
 AGENT_TYPE_METADATA = 'Metadata agent'
-AGENT_TYPE_SDNVE = 'IBM SDN-VE agent'
 AGENT_TYPE_NIC_SWITCH = 'NIC Switch agent'
 L2_AGENT_TOPIC = 'N/A'
 
@@ -147,6 +144,9 @@ IPV6_PD_POOL_ID = 'prefix_delegation'
 
 # Special provisional prefix for IPv6 Prefix Delegation
 PROVISIONAL_IPV6_PD_PREFIX = '::/64'
+
+# Timeout in seconds for getting an IPv6 LLA
+LLA_TASK_TIMEOUT = 40
 
 # Linux interface max length
 DEVICE_NAME_MAX_LEN = 15

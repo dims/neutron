@@ -1,4 +1,4 @@
-# Copyright 2012 NEC Corporation.
+# Copyright (c) 2015 Thales Services SAS
 # All Rights Reserved.
 #
 #    Licensed under the Apache License, Version 2.0 (the "License"); you may
@@ -13,16 +13,5 @@
 #    License for the specific language governing permissions and limitations
 #    under the License.
 
-import sys
-
-from networking_nec.plugins.openflow.agent import l2_agent
-
-from neutron.common import config as common_config
-from neutron.plugins.nec import config as nec_config
-
-
-def main():
-    nec_config.register_agent_opts()
-    common_config.init(sys.argv[1:])
-    common_config.setup_logging()
-    l2_agent.run()
+AGENT_TYPE_HYPERV = 'hyperv'
+VIF_TYPE_HYPERV = 'hyperv'
