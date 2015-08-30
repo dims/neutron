@@ -132,19 +132,20 @@ def execute(cmd, process_input=None, addl_env=None,
                 except UnicodeError:
                     pass
 
-        m = _("\nCommand: {cmd}\nExit code: {code}\nStdin: {stdin}\n"
-              "Stdout: {stdout}\nStderr: {stderr}").format(
+        m = _("\nCommand: {cmd}\nExit code: {code}\n").format(
                   cmd=cmd,
-                  code=returncode,
-                  stdin=process_input or '',
-                  stdout=_stdout,
-                  stderr=_stderr)
+                  code=returncode)
 
         extra_ok_codes = extra_ok_codes or []
         if returncode and returncode in extra_ok_codes:
             returncode = None
 
         if returncode and log_fail_as_error:
+            m += ("Stdin: {stdin}\n"
+                  "Stdout: {stdout}\nStderr: {stderr}").format(
+                stdin=process_input or '',
+                stdout=_stdout,
+                stderr=_stderr)
             LOG.error(m)
         else:
             LOG.debug(m)
@@ -172,7 +173,7 @@ def get_interface_mac(interface):
                     for char in info[MAC_START:MAC_END]])[:-1]
 
 
-def replace_file(file_name, data):
+def replace_file(file_name, data, file_mode=0o644):
     """Replaces the contents of file_name with data in a safe manner.
 
     First write to a temp file and then rename. Since POSIX renames are
@@ -185,7 +186,7 @@ def replace_file(file_name, data):
     tmp_file = tempfile.NamedTemporaryFile('w+', dir=base_dir, delete=False)
     tmp_file.write(data)
     tmp_file.close()
-    os.chmod(tmp_file.name, 0o644)
+    os.chmod(tmp_file.name, file_mode)
     os.rename(tmp_file.name, file_name)
 
 

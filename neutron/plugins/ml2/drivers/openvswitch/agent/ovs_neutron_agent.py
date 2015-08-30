@@ -33,7 +33,6 @@ from neutron.agent.common import polling
 from neutron.agent.common import utils
 from neutron.agent.l2.extensions import manager as ext_manager
 from neutron.agent.linux import ip_lib
-from neutron.agent.linux.iptables_firewall import port_needs_l3_security
 from neutron.agent import rpc as agent_rpc
 from neutron.agent import securitygroups_rpc as sg_rpc
 from neutron.api.rpc.handlers import dvr_rpc
@@ -239,7 +238,9 @@ class OVSNeutronAgent(sg_rpc.SecurityGroupAgentRpcCallbackMixin,
         self.bridge_mappings = bridge_mappings
         self.setup_physical_bridges(self.bridge_mappings)
         self.local_vlan_map = {}
-        self.tun_br_ofports = {p_const.TYPE_GRE: {},
+
+        self.tun_br_ofports = {p_const.TYPE_GENEVE: {},
+                               p_const.TYPE_GRE: {},
                                p_const.TYPE_VXLAN: {}}
 
         self.polling_interval = polling_interval
@@ -584,7 +585,7 @@ class OVSNeutronAgent(sg_rpc.SecurityGroupAgentRpcCallbackMixin,
 
         :param net_uuid: the uuid of the network associated with this vlan.
         :param network_type: the network type ('gre', 'vxlan', 'vlan', 'flat',
-                                               'local')
+                                               'local', 'geneve')
         :param physical_network: the physical network for 'vlan' or 'flat'
         :param segmentation_id: the VID for 'vlan' or tunnel ID for 'tunnel'
         '''
@@ -828,9 +829,6 @@ class OVSNeutronAgent(sg_rpc.SecurityGroupAgentRpcCallbackMixin,
         if port_details.get('allowed_address_pairs'):
             addresses |= {p['ip_address']
                           for p in port_details['allowed_address_pairs']}
-
-        if not port_needs_l3_security(port_details):
-            return
 
         addresses = {ip for ip in addresses
                      if netaddr.IPNetwork(ip).version == 4}
@@ -1738,9 +1736,10 @@ class OVSNeutronAgent(sg_rpc.SecurityGroupAgentRpcCallbackMixin,
     def _check_agent_configurations(self):
         if (self.enable_distributed_routing and self.enable_tunneling
             and not self.l2_pop):
-            raise ValueError(_("DVR deployments for VXLAN/GRE underlays "
-                               "require L2-pop to be enabled, in both the "
-                               "Agent and Server side."))
+
+            raise ValueError(_("DVR deployments for VXLAN/GRE/Geneve "
+                               "underlays require L2-pop to be enabled, "
+                               "in both the Agent and Server side."))
 
 
 def create_agent_config_map(config):

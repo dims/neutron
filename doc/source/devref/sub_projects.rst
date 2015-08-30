@@ -67,6 +67,9 @@ working on testing.
 By being included, the project accepts oversight by the TC as a part of
 being in OpenStack, and also accepts oversight by the Neutron PTL.
 
+It is also assumed the respective review teams will make sure their projects
+stay in line with `current best practices <sub_project_guidelines.html>`_.
+
 Inclusion Criteria
 ------------------
 
@@ -137,6 +140,8 @@ repo but are summarized here to describe the functionality they provide.
 | networking-odl_               |      ml2,l3,lb,fw     |
 +-------------------------------+-----------------------+
 | networking-ofagent_           |          ml2          |
++-------------------------------+-----------------------+
+| networking-onos_              |          ml2          |
 +-------------------------------+-----------------------+
 | networking-ovn_               |          ml2          |
 +-------------------------------+-----------------------+
@@ -348,6 +353,15 @@ OpenFlow Agent (ofagent)
 * Git: https://git.openstack.org/cgit/openstack/networking-ofagent
 * Launchpad: https://launchpad.net/networking-ofagent
 * PyPI: https://pypi.python.org/pypi/networking-ofagent
+
+.. _networking-onos:
+
+Open Network Operating System (onos)
+++++++++++++++++++++++++++++++++++++
+
+* Git: https://git.openstack.org/cgit/openstack/networking-onos
+* Launchpad: https://launchpad.net/networking-onos
+* PyPI: https://pypi.python.org/pypi/networking-onos
 
 .. _networking-ovn:
 
