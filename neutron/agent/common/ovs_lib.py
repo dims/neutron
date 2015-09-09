@@ -152,6 +152,10 @@ class OVSBridge(BaseOVS):
         super(OVSBridge, self).__init__()
         self.br_name = br_name
         self.datapath_type = datapath_type
+        self.agent_uuid_stamp = 0
+
+    def set_agent_uuid_stamp(self, val):
+        self.agent_uuid_stamp = val
 
     def set_controller(self, controllers):
         self.ovsdb.set_controller(self.br_name,
@@ -260,6 +264,10 @@ class OVSBridge(BaseOVS):
                                self.br_name, 'datapath_id')
 
     def do_action_flows(self, action, kwargs_list):
+        if action != 'del':
+            for kw in kwargs_list:
+                if 'cookie' not in kw:
+                    kw['cookie'] = self.agent_uuid_stamp
         flow_strs = [_build_flow_expr_str(kw, action) for kw in kwargs_list]
         self.run_ofctl('%s-flows' % action, ['-'], '\n'.join(flow_strs))
 
@@ -291,7 +299,8 @@ class OVSBridge(BaseOVS):
     def add_tunnel_port(self, port_name, remote_ip, local_ip,
                         tunnel_type=p_const.TYPE_GRE,
                         vxlan_udp_port=p_const.VXLAN_UDP_PORT,
-                        dont_fragment=True):
+                        dont_fragment=True,
+                        tunnel_csum=False):
         attrs = [('type', tunnel_type)]
         # TODO(twilson) This is an OrderedDict solely to make a test happy
         options = collections.OrderedDict()
@@ -306,6 +315,8 @@ class OVSBridge(BaseOVS):
         options['local_ip'] = local_ip
         options['in_key'] = 'flow'
         options['out_key'] = 'flow'
+        if tunnel_csum:
+            options['csum'] = str(tunnel_csum).lower()
         attrs.append(('options', options))
 
         return self.add_port(port_name, *attrs)

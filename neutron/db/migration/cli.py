@@ -47,16 +47,7 @@ neutron_alembic_ini = os.path.join(os.path.dirname(__file__), 'alembic.ini')
 VALID_SERVICES = ['fwaas', 'lbaas', 'vpnaas']
 INSTALLED_SERVICES = [service_ for service_ in VALID_SERVICES
                       if 'neutron-%s' % service_ in migration_entrypoints]
-INSTALLED_SERVICE_PROJECTS = ['neutron-%s' % service_
-                              for service_ in INSTALLED_SERVICES]
-INSTALLED_SUBPROJECTS = [project_ for project_ in migration_entrypoints
-                         if project_ not in INSTALLED_SERVICE_PROJECTS]
-
-service_help = (
-    _("Can be one of '%s'.") % "', '".join(INSTALLED_SERVICES)
-    if INSTALLED_SERVICES else
-    _("(No services are currently installed).")
-)
+INSTALLED_SUBPROJECTS = [project_ for project_ in migration_entrypoints]
 
 _core_opts = [
     cfg.StrOpt('core_plugin',
@@ -64,12 +55,14 @@ _core_opts = [
                help=_('Neutron plugin provider module')),
     cfg.StrOpt('service',
                choices=INSTALLED_SERVICES,
-               help=(_("The advanced service to execute the command against. ")
-                     + service_help)),
+               help=(_("(Deprecated. Use '--subproject neutron-SERVICE' "
+                       "instead.) The advanced service to execute the "
+                       "command against."))),
     cfg.StrOpt('subproject',
                choices=INSTALLED_SUBPROJECTS,
                help=(_("The subproject to execute the command against. "
-                       "Can be one of %s.") % INSTALLED_SUBPROJECTS)),
+                       "Can be one of: '%s'.")
+                     % "', '".join(INSTALLED_SUBPROJECTS))),
     cfg.BoolOpt('split_branches',
                 default=False,
                 help=_("Enforce using split branches file structure."))
@@ -98,10 +91,18 @@ CONF.register_cli_opts(_db_opts, 'database')
 CONF.register_opts(_quota_opts, 'QUOTAS')
 
 
-def do_alembic_command(config, cmd, *args, **kwargs):
+def do_alembic_command(config, cmd, revision=None, desc=None, **kwargs):
+    args = []
+    if revision:
+        args.append(revision)
+
     project = config.get_main_option('neutron_project')
-    alembic_util.msg(_('Running %(cmd)s for %(project)s ...') %
-                     {'cmd': cmd, 'project': project})
+    if desc:
+        alembic_util.msg(_('Running %(cmd)s (%(desc)s) for %(project)s ...') %
+                         {'cmd': cmd, 'desc': desc, 'project': project})
+    else:
+        alembic_util.msg(_('Running %(cmd)s for %(project)s ...') %
+                         {'cmd': cmd, 'project': project})
     try:
         getattr(alembic_command, cmd)(config, *args, **kwargs)
     except alembic_util.CommandError as e:
@@ -126,30 +127,48 @@ def add_alembic_subparser(sub, cmd):
 
 
 def do_upgrade(config, cmd):
-    if not CONF.command.revision and not CONF.command.delta:
+    desc = None
+
+    if ((CONF.command.revision or CONF.command.delta) and
+        (CONF.command.expand or CONF.command.contract)):
+        raise SystemExit(_(
+            'Phase upgrade options do not accept revision specification'))
+
+    if CONF.command.expand:
+        desc = EXPAND_BRANCH
+        revision = _get_branch_head(EXPAND_BRANCH)
+
+    elif CONF.command.contract:
+        desc = CONTRACT_BRANCH
+        revision = _get_branch_head(CONTRACT_BRANCH)
+
+    elif not CONF.command.revision and not CONF.command.delta:
         raise SystemExit(_('You must provide a revision or relative delta'))
 
-    revision = CONF.command.revision or ''
-    if '-' in revision:
-        raise SystemExit(_('Negative relative revision (downgrade) not '
-                           'supported'))
+    else:
+        revision = CONF.command.revision or ''
+        if '-' in revision:
+            raise SystemExit(_('Negative relative revision (downgrade) not '
+                               'supported'))
 
-    delta = CONF.command.delta
-    if delta:
-        if '+' in revision:
-            raise SystemExit(_('Use either --delta or relative revision, '
-                               'not both'))
-        if delta < 0:
-            raise SystemExit(_('Negative delta (downgrade) not supported'))
-        revision = '%s+%d' % (revision, delta)
+        delta = CONF.command.delta
+        if delta:
+            if '+' in revision:
+                raise SystemExit(_('Use either --delta or relative revision, '
+                                   'not both'))
+            if delta < 0:
+                raise SystemExit(_('Negative delta (downgrade) not supported'))
+            revision = '%s+%d' % (revision, delta)
 
-    # leave branchless 'head' revision request backward compatible by applying
-    # all heads in all available branches.
-    if revision == 'head':
-        revision = 'heads'
+        # leave branchless 'head' revision request backward compatible by
+        # applying all heads in all available branches.
+        if revision == 'head':
+            revision = 'heads'
+
     if not CONF.command.sql:
         run_sanity_checks(config, revision)
-    do_alembic_command(config, cmd, revision, sql=CONF.command.sql)
+    do_alembic_command(config, cmd, revision=revision,
+                       desc=desc, sql=CONF.command.sql)
 
 
 def no_downgrade(config, cmd):
@@ -158,7 +177,7 @@ def no_downgrade(config, cmd):
 
 def do_stamp(config, cmd):
     do_alembic_command(config, cmd,
-                       CONF.command.revision,
+                       revision=CONF.command.revision,
                        sql=CONF.command.sql)
 
 
@@ -311,6 +330,11 @@ def add_command_parsers(subparsers):
                         default='',
                         help='Change MySQL storage engine of current '
                              'existing tables')
+
+    group = parser.add_mutually_exclusive_group()
+    group.add_argument('--expand', action='store_true')
+    group.add_argument('--contract', action='store_true')
+
     parser.set_defaults(func=do_upgrade)
 
     parser = subparsers.add_parser('downgrade', help="(No longer supported)")
@@ -447,8 +471,8 @@ def get_alembic_configs():
     # Get the script locations for the specified or installed projects.
     # Which projects to get script locations for is determined by the CLI
     # options as follows:
-    #     --service X       # only subproject neutron-X
-    #     --subproject Y    # only subproject Y
+    #     --service X       # only subproject neutron-X (deprecated)
+    #     --subproject Y    # only subproject Y (where Y can be neutron)
     #     (none specified)  # neutron and all installed subprojects
     script_locations = {}
     if CONF.service:

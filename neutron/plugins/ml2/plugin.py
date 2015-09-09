@@ -665,6 +665,13 @@ class Ml2Plugin(db_base_plugin_v2.NeutronDbPluginV2,
             self._process_l3_update(context, updated_network, net_data)
             self.type_manager.extend_network_dict_provider(context,
                                                            updated_network)
+
+            # TODO(QoS): Move out to the extension framework somehow.
+            need_network_update_notify = (
+                qos_consts.QOS_POLICY_ID in net_data and
+                original_network[qos_consts.QOS_POLICY_ID] !=
+                updated_network[qos_consts.QOS_POLICY_ID])
+
             mech_context = driver_context.NetworkContext(
                 self, context, updated_network,
                 original_network=original_network)
@@ -675,6 +682,8 @@ class Ml2Plugin(db_base_plugin_v2.NeutronDbPluginV2,
         # now the error is propogated to the caller, which is expected to
         # either undo/retry the operation or delete the resource.
         self.mechanism_manager.update_network_postcommit(mech_context)
+        if need_network_update_notify:
+            self.notifier.network_update(context, updated_network)
         return updated_network
 
     def get_network(self, context, id, fields=None):
@@ -699,32 +708,30 @@ class Ml2Plugin(db_base_plugin_v2.NeutronDbPluginV2,
 
         return [self._fields(net, fields) for net in nets]
 
-    def _delete_ports(self, context, ports):
-        for port in ports:
+    def _delete_ports(self, context, port_ids):
+        for port_id in port_ids:
             try:
-                self.delete_port(context, port.id)
-            except (exc.PortNotFound, sa_exc.ObjectDeletedError):
-                context.session.expunge(port)
+                self.delete_port(context, port_id)
+            except exc.PortNotFound:
                 # concurrent port deletion can be performed by
                 # release_dhcp_port caused by concurrent subnet_delete
-                LOG.info(_LI("Port %s was deleted concurrently"), port.id)
+                LOG.info(_LI("Port %s was deleted concurrently"), port_id)
             except Exception:
                 with excutils.save_and_reraise_exception():
                     LOG.exception(_LE("Exception auto-deleting port %s"),
-                                  port.id)
+                                  port_id)
 
-    def _delete_subnets(self, context, subnets):
-        for subnet in subnets:
+    def _delete_subnets(self, context, subnet_ids):
+        for subnet_id in subnet_ids:
             try:
-                self.delete_subnet(context, subnet.id)
-            except (exc.SubnetNotFound, sa_exc.ObjectDeletedError):
-                context.session.expunge(subnet)
+                self.delete_subnet(context, subnet_id)
+            except exc.SubnetNotFound:
                 LOG.info(_LI("Subnet %s was deleted concurrently"),
-                         subnet.id)
+                         subnet_id)
             except Exception:
                 with excutils.save_and_reraise_exception():
                     LOG.exception(_LE("Exception auto-deleting subnet %s"),
-                                  subnet.id)
+                                  subnet_id)
 
     def delete_network(self, context, id):
         # REVISIT(rkukura) The super(Ml2Plugin, self).delete_network()
@@ -788,6 +795,9 @@ class Ml2Plugin(db_base_plugin_v2.NeutronDbPluginV2,
                         # network record, so explicit removal is not necessary.
                         LOG.debug("Committing transaction")
                         break
+
+                    port_ids = [port.id for port in ports]
+                    subnet_ids = [subnet.id for subnet in subnets]
             except os_db_exception.DBError as e:
                 with excutils.save_and_reraise_exception() as ctxt:
                     if isinstance(e.inner_exception, sql_exc.IntegrityError):
@@ -795,8 +805,8 @@ class Ml2Plugin(db_base_plugin_v2.NeutronDbPluginV2,
                         LOG.warning(_LW("A concurrent port creation has "
                                         "occurred"))
                         continue
-            self._delete_ports(context, ports)
-            self._delete_subnets(context, subnets)
+            self._delete_ports(context, port_ids)
+            self._delete_subnets(context, subnet_ids)
 
         try:
             self.mechanism_manager.delete_network_postcommit(mech_context)
@@ -814,7 +824,9 @@ class Ml2Plugin(db_base_plugin_v2.NeutronDbPluginV2,
             result = super(Ml2Plugin, self).create_subnet(context, subnet)
             self.extension_manager.process_create_subnet(
                 context, subnet[attributes.SUBNET], result)
-            mech_context = driver_context.SubnetContext(self, context, result)
+            network = self.get_network(context, result['network_id'])
+            mech_context = driver_context.SubnetContext(self, context,
+                                                        result, network)
             self.mechanism_manager.create_subnet_precommit(mech_context)
 
         return result, mech_context
@@ -842,8 +854,10 @@ class Ml2Plugin(db_base_plugin_v2.NeutronDbPluginV2,
                 context, id, subnet)
             self.extension_manager.process_update_subnet(
                 context, subnet[attributes.SUBNET], updated_subnet)
+            network = self.get_network(context, updated_subnet['network_id'])
             mech_context = driver_context.SubnetContext(
-                self, context, updated_subnet, original_subnet=original_subnet)
+                self, context, updated_subnet, network,
+                original_subnet=original_subnet)
             self.mechanism_manager.update_subnet_precommit(mech_context)
 
         # TODO(apech) - handle errors raised by update_subnet, potentially
@@ -920,8 +934,10 @@ class Ml2Plugin(db_base_plugin_v2.NeutronDbPluginV2,
                 # If allocated is None, then all the IPAllocation were
                 # correctly deleted during the previous pass.
                 if not allocated:
+                    network = self.get_network(context, subnet['network_id'])
                     mech_context = driver_context.SubnetContext(self, context,
-                                                                subnet)
+                                                                subnet,
+                                                                network)
                     self.mechanism_manager.delete_subnet_precommit(
                         mech_context)
 
@@ -932,7 +948,7 @@ class Ml2Plugin(db_base_plugin_v2.NeutronDbPluginV2,
                     break
 
             for a in allocated:
-                if a.port_id:
+                if a.port:
                     # calling update_port() for each allocation to remove the
                     # IP from the port and call the MechanismDrivers
                     data = {attributes.PORT:
@@ -942,6 +958,8 @@ class Ml2Plugin(db_base_plugin_v2.NeutronDbPluginV2,
                                            if ip.subnet_id != id]}}
                     try:
                         self.update_port(context, a.port_id, data)
+                    except exc.PortNotFound:
+                        LOG.debug("Port %s deleted concurrently", a.port_id)
                     except Exception:
                         with excutils.save_and_reraise_exception():
                             LOG.exception(_LE("Exception deleting fixed_ip "
@@ -1539,3 +1557,6 @@ class Ml2Plugin(db_base_plugin_v2.NeutronDbPluginV2,
             if port:
                 return port.id
         return device
+
+    def get_workers(self):
+        return self.mechanism_manager.get_workers()

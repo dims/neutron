@@ -126,27 +126,16 @@ class DbQuotaDriver(object):
 
         return dict((k, v) for k, v in quotas.items())
 
-    def _handle_expired_reservations(self, context, tenant_id,
-                                     resource, expired_amount):
-        LOG.debug(("Adjusting usage for resource %(resource)s: "
-                   "removing %(expired)d reserved items"),
-                  {'resource': resource,
-                   'expired': expired_amount})
-        # TODO(salv-orlando): It should be possible to do this
-        # operation for all resources with a single query.
-        # Update reservation usage
-        quota_api.set_quota_usage(
-            context,
-            resource,
-            tenant_id,
-            reserved=-expired_amount,
-            delta=True)
+    def _handle_expired_reservations(self, context, tenant_id):
+        LOG.debug("Deleting expired reservations for tenant:%s" % tenant_id)
         # Delete expired reservations (we don't want them to accrue
         # in the database)
         quota_api.remove_expired_reservations(
             context, tenant_id=tenant_id)
 
     @oslo_db_api.wrap_db_retry(max_retries=db_api.MAX_RETRIES,
+                               retry_interval=0.1,
+                               inc_retry_interval=True,
                                retry_on_request=True,
                                retry_on_deadlock=True)
     def make_reservation(self, context, tenant_id, resources, deltas, plugin):
@@ -163,7 +152,7 @@ class DbQuotaDriver(object):
         # locks should be ok to use when support for sending "hotspot" writes
         # to a single node will be avaialable.
         requested_resources = deltas.keys()
-        with context.session.begin():
+        with db_api.autonested_transaction(context.session):
             # Gather current usage information
             # TODO(salv-orlando): calling count() for every resource triggers
             # multiple queries on quota usage. This should be improved, however
@@ -173,7 +162,7 @@ class DbQuotaDriver(object):
             # instances
             current_usages = dict(
                 (resource, resources[resource].count(
-                    context, plugin, tenant_id)) for
+                    context, plugin, tenant_id, resync_usage=False)) for
                 resource in requested_resources)
             # get_tenant_quotes needs in inout a dictionary mapping resource
             # name to BaseResosurce instances so that the default quota can be
@@ -209,8 +198,7 @@ class DbQuotaDriver(object):
                 if res_headroom < deltas[resource]:
                     resources_over_limit.append(resource)
                 if expired_reservations:
-                    self._handle_expired_reservations(
-                        context, tenant_id, resource, expired_reservations)
+                    self._handle_expired_reservations(context, tenant_id)
 
             if resources_over_limit:
                 raise exceptions.OverQuota(overs=sorted(resources_over_limit))

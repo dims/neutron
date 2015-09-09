@@ -45,6 +45,9 @@ class NeutronException(Exception):
         def __unicode__(self):
             return unicode(self.msg)
 
+    def __str__(self):
+        return self.msg
+
     def use_fatal_exceptions(self):
         return False
 
@@ -521,3 +524,8 @@ class NetworkSubnetPoolAffinityError(BadRequest):
 
 class ObjectActionError(NeutronException):
     message = _('Object action %(action)s failed because: %(reason)s')
+
+
+class CTZoneExhaustedError(NeutronException):
+    message = _("IPtables conntrack zones exhausted, iptables rules cannot "
+                "be applied.")

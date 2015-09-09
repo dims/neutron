@@ -33,8 +33,11 @@ class TestOVSAgent(base.OVSAgentTestFramework):
 
         self.wait_until_ports_state(self.ports, up=False)
 
-    def test_datapath_type_system(self):
-        expected = constants.OVS_DATAPATH_SYSTEM
+    def _check_datapath_type_netdev(self, expected, default=False):
+        if not default:
+            self.config.set_override('datapath_type',
+                                     expected,
+                                     "OVS")
         agent = self.create_agent()
         self.start_agent(agent)
         actual = self.ovs.db_get_val('Bridge',
@@ -47,25 +50,30 @@ class TestOVSAgent(base.OVSAgentTestFramework):
         self.assertEqual(expected, actual)
 
     def test_datapath_type_netdev(self):
-        expected = constants.OVS_DATAPATH_NETDEV
-        self.config.set_override('datapath_type',
-                                 expected,
-                                 "OVS")
-        agent = self.create_agent()
-        self.start_agent(agent)
-        actual = self.ovs.db_get_val('Bridge',
-                                     agent.int_br.br_name,
-                                     'datapath_type')
-        self.assertEqual(expected, actual)
-        actual = self.ovs.db_get_val('Bridge',
-                                     agent.tun_br.br_name,
-                                     'datapath_type')
-        self.assertEqual(expected, actual)
+        self._check_datapath_type_netdev(
+            constants.OVS_DATAPATH_NETDEV)
+
+    def test_datapath_type_system(self):
+        self._check_datapath_type_netdev(
+            constants.OVS_DATAPATH_SYSTEM)
+
+    def test_datapath_type_default(self):
+        self._check_datapath_type_netdev(
+            constants.OVS_DATAPATH_SYSTEM, default=True)
 
     def test_resync_devices_set_up_after_exception(self):
         self.setup_agent_and_ports(
             port_dicts=self.create_test_ports(),
             trigger_resync=True)
+        self.wait_until_ports_state(self.ports, up=True)
+
+    def test_reprocess_port_when_ovs_restarts(self):
+        self.setup_agent_and_ports(
+            port_dicts=self.create_test_ports())
+        self.wait_until_ports_state(self.ports, up=True)
+        self.agent.check_ovs_status.return_value = constants.OVS_RESTARTED
+        # OVS restarted, the agent should reprocess all the ports
+        self.agent.plugin_rpc.update_device_list.reset_mock()
         self.wait_until_ports_state(self.ports, up=True)
 
     def test_port_vlan_tags(self):
@@ -92,7 +100,7 @@ class TestOVSAgent(base.OVSAgentTestFramework):
                                    create_tunnels=False)
         self.wait_until_ports_state(self.ports, up=True)
         ips = [port['fixed_ips'][0]['ip_address'] for port in self.ports]
-        with net_helpers.async_ping(self.namespace, ips) as running:
-            while running():
+        with net_helpers.async_ping(self.namespace, ips) as done:
+            while not done():
                 self.agent.setup_integration_br()
                 time.sleep(0.25)

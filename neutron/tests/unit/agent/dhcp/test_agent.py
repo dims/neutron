@@ -215,7 +215,7 @@ fake_down_network = dhcp.NetModel(
 class TestDhcpAgent(base.BaseTestCase):
     def setUp(self):
         super(TestDhcpAgent, self).setUp()
-        entry.register_options()
+        entry.register_options(cfg.CONF)
         cfg.CONF.set_override('interface_driver',
                               'neutron.agent.linux.interface.NullDriver')
         # disable setting up periodic state reporting
@@ -541,7 +541,7 @@ class TestDhcpAgentEventHandler(base.BaseTestCase):
         config.register_interface_driver_opts_helper(cfg.CONF)
         cfg.CONF.set_override('interface_driver',
                               'neutron.agent.linux.interface.NullDriver')
-        entry.register_options()  # register all dhcp cfg options
+        entry.register_options(cfg.CONF)  # register all dhcp cfg options
 
         self.plugin_p = mock.patch(DHCP_PLUGIN)
         plugin_cls = self.plugin_p.start()
@@ -978,8 +978,7 @@ class TestDhcpAgentEventHandler(base.BaseTestCase):
 class TestDhcpPluginApiProxy(base.BaseTestCase):
     def _test_dhcp_api(self, method, **kwargs):
         ctxt = context.get_admin_context()
-        proxy = dhcp_agent.DhcpPluginApi('foo', ctxt, None)
-        proxy.host = 'foo'
+        proxy = dhcp_agent.DhcpPluginApi('foo', ctxt, None, host='foo')
 
         with mock.patch.object(proxy.client, 'call') as rpc_mock,\
                 mock.patch.object(proxy.client, 'prepare') as prepare_mock:
@@ -1193,6 +1192,7 @@ class TestDeviceManager(base.BaseTestCase):
         self.mock_driver = mock.MagicMock()
         self.mock_driver.DEV_NAME_LEN = (
             interface.LinuxInterfaceDriver.DEV_NAME_LEN)
+        self.mock_driver.use_gateway_ips = False
         self.mock_iproute = mock.MagicMock()
         driver_cls.return_value = self.mock_driver
         iproute_cls.return_value = self.mock_iproute
