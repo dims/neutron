@@ -3,6 +3,9 @@ env:
   - TOXENV=py27
   - TOXENV=py34
 install:
+  - travis_retry pip install codecov
   - travis_retry pip install tox
 script:
   - tox
+after_success:
+    codecov
