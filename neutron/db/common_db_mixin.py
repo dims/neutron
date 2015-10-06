@@ -129,8 +129,8 @@ class CommonDbMixin(object):
         query_filter = None
         if self.model_query_scope(context, model):
             if hasattr(model, 'rbac_entries'):
-                rbac_model, join_params = self._get_rbac_query_params(model)
-                query = query.outerjoin(*join_params)
+                query = query.outerjoin(model.rbac_entries)
+                rbac_model = model.rbac_entries.property.mapper.class_
                 query_filter = (
                     (model.tenant_id == context.tenant_id) |
                     ((rbac_model.action == 'access_as_shared') &
@@ -183,19 +183,6 @@ class CommonDbMixin(object):
         query = self._model_query(context, model)
         return query.filter(model.id == id).one()
 
-    @staticmethod
-    def _get_rbac_query_params(model):
-        """Return the class and join params for the rbac relationship."""
-        try:
-            cls = model.rbac_entries.property.mapper.class_
-            return (cls, (cls, ))
-        except AttributeError:
-            # an association proxy is being used (e.g. subnets
-            # depends on network's rbac entries)
-            rbac_model = (model.rbac_entries.target_class.
-                          rbac_entries.property.mapper.class_)
-            return (rbac_model, model.rbac_entries.attr)
-
     def _apply_filters_to_query(self, query, model, filters, context=None):
         if filters:
             for key, value in six.iteritems(filters):
@@ -213,17 +200,34 @@ class CommonDbMixin(object):
                 elif key == 'shared' and hasattr(model, 'rbac_entries'):
                     # translate a filter on shared into a query against the
                     # object's rbac entries
-                    rbac, join_params = self._get_rbac_query_params(model)
-                    query = query.outerjoin(*join_params, aliased=True)
+                    query = query.outerjoin(model.rbac_entries)
+                    rbac = model.rbac_entries.property.mapper.class_
                     matches = [rbac.target_tenant == '*']
                     if context:
                         matches.append(rbac.target_tenant == context.tenant_id)
-                    is_shared = and_(
-                        ~rbac.object_id.is_(None),
-                        rbac.action == 'access_as_shared',
-                        or_(*matches)
-                    )
-                    query = query.filter(is_shared if value[0] else ~is_shared)
+                    # any 'access_as_shared' records that match the
+                    # wildcard or requesting tenant
+                    is_shared = and_(rbac.action == 'access_as_shared',
+                                     or_(*matches))
+                    if not value[0]:
+                        # NOTE(kevinbenton): we need to find objects that don't
+                        # have an entry that matches the criteria above so
+                        # we use a subquery to exclude them.
+                        # We can't just filter the inverse of the query above
+                        # because that will still give us a network shared to
+                        # our tenant (or wildcard) if it's shared to another
+                        # tenant.
+                        # This is the column joining the table to rbac via
+                        # the object_id. We can't just use model.id because
+                        # subnets join on network.id so we have to inspect the
+                        # relationship.
+                        join_cols = model.rbac_entries.property.local_columns
+                        oid_col = list(join_cols)[0]
+                        is_shared = ~oid_col.in_(
+                            query.session.query(rbac.object_id).
+                            filter(is_shared)
+                        )
+                    query = query.filter(is_shared)
             for _nam, hooks in six.iteritems(self._model_query_hooks.get(model,
                                                                          {})):
                 result_filter = hooks.get('result_filters', None)

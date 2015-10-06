@@ -104,7 +104,7 @@ def get_test_timeout(default=0):
 
 
 def sanitize_log_path(path):
-    # Sanitize the string so that it's log path is shell friendly
+    # Sanitize the string so that its log path is shell friendly
     return path.replace(' ', '-').replace('(', '_').replace(')', '_')
 
 
@@ -409,6 +409,10 @@ class PluginFixture(fixtures.Fixture):
             'neutron.db.agentschedulers_db.DhcpAgentSchedulerDbMixin.'
             'start_periodic_dhcp_agent_status_check')
         self.patched_dhcp_periodic = self.dhcp_periodic_p.start()
+        self.agent_health_check_p = mock.patch(
+            'neutron.db.agentschedulers_db.DhcpAgentSchedulerDbMixin.'
+            'add_agent_status_check')
+        self.agent_health_check = self.agent_health_check_p.start()
         # Plugin cleanup should be triggered last so that
         # test-specific cleanup has a chance to release references.
         self.addCleanup(self.cleanup_core_plugin)

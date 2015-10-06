@@ -352,9 +352,6 @@ class OVSDVRNeutronAgent(object):
     def in_distributed_mode(self):
         return self.dvr_mac_address is not None
 
-    def is_dvr_router_interface(self, device_owner):
-        return device_owner == n_const.DEVICE_OWNER_DVR_INTERFACE
-
     def process_tunneled_network(self, network_type, lvid, segmentation_id):
         self.tun_br.provision_local_vlan(
             network_type=network_type,
@@ -407,9 +404,9 @@ class OVSDVRNeutronAgent(object):
                   "get_ports_on_host_by_subnet %s",
                   local_compute_ports)
         vif_by_id = self.int_br.get_vifs_by_ids(
-            [prt['id'] for prt in local_compute_ports])
-        for prt in local_compute_ports:
-            vif = vif_by_id.get(prt['id'])
+            [local_port['id'] for local_port in local_compute_ports])
+        for local_port in local_compute_ports:
+            vif = vif_by_id.get(local_port['id'])
             if not vif:
                 continue
             ldm.add_compute_ofport(vif.vif_id, vif.ofport)
@@ -423,7 +420,7 @@ class OVSDVRNeutronAgent(object):
                 # the compute port is discovered first here that its on
                 # a dvr routed subnet queue this subnet to that port
                 comp_ovsport = OVSPort(vif.vif_id, vif.ofport,
-                                  vif.vif_mac, prt['device_owner'])
+                                  vif.vif_mac, local_port['device_owner'])
                 comp_ovsport.add_subnet(subnet_uuid)
                 self.local_ports[vif.vif_id] = comp_ovsport
             # create rule for just this vm port

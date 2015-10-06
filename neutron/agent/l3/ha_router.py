@@ -40,11 +40,6 @@ class HaRouter(router.RouterInfo):
         self.state_change_callback = state_change_callback
 
     @property
-    def is_ha(self):
-        # TODO(Carl) Remove when refactoring to use sub-classes is complete.
-        return self.router is not None
-
-    @property
     def ha_priority(self):
         return self.router.get('priority', keepalived.HA_DEFAULT_PRIORITY)
 
@@ -187,7 +182,7 @@ class HaRouter(router.RouterInfo):
 
     def _add_default_gw_virtual_route(self, ex_gw_port, interface_name):
         default_gw_rts = []
-        gateway_ips, enable_ra_on_gw = self._get_external_gw_ips(ex_gw_port)
+        gateway_ips = self._get_external_gw_ips(ex_gw_port)
         for gw_ip in gateway_ips:
                 # TODO(Carl) This is repeated everywhere.  A method would
                 # be nice.
@@ -196,9 +191,6 @@ class HaRouter(router.RouterInfo):
                 default_gw_rts.append(keepalived.KeepalivedVirtualRoute(
                     default_gw, gw_ip, interface_name))
         instance.virtual_routes.gateway_routes = default_gw_rts
-
-        if enable_ra_on_gw:
-            self.driver.configure_ipv6_ra(self.ns_name, interface_name)
 
     def _add_extra_subnet_onlink_routes(self, ex_gw_port, interface_name):
         extra_subnets = ex_gw_port.get('extra_subnets', [])
@@ -362,10 +354,10 @@ class HaRouter(router.RouterInfo):
                                                        interface_name)
 
     def delete(self, agent):
+        super(HaRouter, self).delete(agent)
         self.destroy_state_change_monitor(self.process_monitor)
         self.ha_network_removed()
         self.disable_keepalived()
-        super(HaRouter, self).delete(agent)
 
     def process(self, agent):
         super(HaRouter, self).process(agent)

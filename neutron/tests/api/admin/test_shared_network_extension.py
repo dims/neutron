@@ -182,17 +182,8 @@ class RBACSharedNetworksTest(base.BaseAdminNetworkTest):
     @classmethod
     def resource_setup(cls):
         super(RBACSharedNetworksTest, cls).resource_setup()
-        extensions = cls.admin_client.list_extensions()
         if not test.is_extension_enabled('rbac_policies', 'network'):
             msg = "rbac extension not enabled."
-            raise cls.skipException(msg)
-        # NOTE(kevinbenton): the following test seems to be necessary
-        # since the default is 'all' for the above check and these tests
-        # need to get into the gate and be disabled until the service plugin
-        # is enabled in devstack. Is there a better way to do this?
-        if 'rbac-policies' not in [x['alias']
-                                   for x in extensions['extensions']]:
-            msg = "rbac extension is not in extension listing."
             raise cls.skipException(msg)
         creds = cls.isolated_creds.get_alt_creds()
         cls.client2 = clients.Manager(credentials=creds).network_client
@@ -350,3 +341,26 @@ class RBACSharedNetworksTest(base.BaseAdminNetworkTest):
         with testtools.ExpectedException(lib_exc.Forbidden):
             self.client.update_rbac_policy(pol['rbac_policy']['id'],
                                            target_tenant='*')
+
+    @test.attr(type='smoke')
+    @test.idempotent_id('86c3529b-1231-40de-803c-aeeeeeee7fff')
+    def test_filtering_works_with_rbac_records_present(self):
+        resp = self._make_admin_net_and_subnet_shared_to_tenant_id(
+            self.client.tenant_id)
+        net = resp['network']['id']
+        sub = resp['subnet']['id']
+        self.admin_client.create_rbac_policy(
+            object_type='network', object_id=net,
+            action='access_as_shared', target_tenant='*')
+        self._assert_shared_object_id_listing_presence('subnets', False, sub)
+        self._assert_shared_object_id_listing_presence('subnets', True, sub)
+        self._assert_shared_object_id_listing_presence('networks', False, net)
+        self._assert_shared_object_id_listing_presence('networks', True, net)
+
+    def _assert_shared_object_id_listing_presence(self, resource, shared, oid):
+        lister = getattr(self.admin_client, 'list_%s' % resource)
+        objects = [o['id'] for o in lister(shared=shared)[resource]]
+        if shared:
+            self.assertIn(oid, objects)
+        else:
+            self.assertNotIn(oid, objects)

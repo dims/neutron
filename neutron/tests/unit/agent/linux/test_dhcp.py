@@ -148,7 +148,9 @@ class FakePort4(object):
                                   'dddddddd-dddd-dddd-dddd-dddddddddddd'),
                  FakeIPAllocation('ffda:3ba5:a17a:4ba3:0216:3eff:fec2:771d',
                                   'eeeeeeee-eeee-eeee-eeee-eeeeeeeeeeee')]
-    dns_assignment = [FakeDNSAssignment('192.168.0.4')]
+    dns_assignment = [
+        FakeDNSAssignment('192.168.0.4'),
+        FakeDNSAssignment('ffda:3ba5:a17a:4ba3:0216:3eff:fec2:771d')]
     mac_address = '00:16:3E:C2:77:1D'
     device_id = 'fake_port4'
 
@@ -213,7 +215,8 @@ class FakeV6PortExtraOpt(object):
     device_owner = 'foo3'
     fixed_ips = [FakeIPAllocation('ffea:3ba5:a17a:4ba3:0216:3eff:fec2:771d',
                                   'eeeeeeee-eeee-eeee-eeee-eeeeeeeeeeee')]
-    dns_assignment = []
+    dns_assignment = [
+        FakeDNSAssignment('ffea:3ba5:a17a:4ba3:0216:3eff:fec2:771d')]
     mac_address = '00:16:3e:c2:77:1d'
     device_id = 'fake_port6'
 
@@ -232,7 +235,9 @@ class FakeDualPortWithV6ExtraOpt(object):
                                   'dddddddd-dddd-dddd-dddd-dddddddddddd'),
                  FakeIPAllocation('ffea:3ba5:a17a:4ba3:0216:3eff:fec2:771d',
                                   'eeeeeeee-eeee-eeee-eeee-eeeeeeeeeeee')]
-    dns_assignment = [FakeDNSAssignment('192.168.0.3')]
+    dns_assignment = [
+        FakeDNSAssignment('192.168.0.3'),
+        FakeDNSAssignment('ffea:3ba5:a17a:4ba3:0216:3eff:fec2:771d')]
     mac_address = '00:16:3e:c2:77:1d'
     device_id = 'fake_port6'
 
@@ -722,6 +727,19 @@ class FakeDualStackNetworkSingleDHCP(object):
 
     subnets = [FakeV4Subnet(), FakeV6SubnetSlaac()]
     ports = [FakePort1(), FakePort4(), FakeRouterPort()]
+
+
+class FakeDualStackNetworkingSingleDHCPTags(object):
+    id = 'eeeeeeee-eeee-eeee-eeee-eeeeeeeeeeee'
+
+    subnets = [FakeV4Subnet(), FakeV6SubnetSlaac()]
+    ports = [FakePort1(), FakePort4(), FakeRouterPort()]
+
+    def __init__(self):
+        for port in self.ports:
+            port.extra_dhcp_opts = [
+                DhcpOpt(opt_name='tag:ipxe,bootfile-name',
+                        opt_value='pxelinux.0')]
 
 
 class FakeV4NetworkMultipleTags(object):
@@ -1847,6 +1865,19 @@ class TestDnsmasq(TestBase):
         self.safe.assert_has_calls([mock.call(exp_host_name, exp_host_data),
                                     mock.call(exp_opt_name, exp_opt_data)])
 
+    def test_host_file_on_net_with_v6_slaac_and_v4(self):
+        exp_host_name = '/dhcp/eeeeeeee-eeee-eeee-eeee-eeeeeeeeeeee/host'
+        exp_host_data = (
+            '00:00:80:aa:bb:cc,host-192-168-0-2.openstacklocal.,192.168.0.2,'
+            'set:eeeeeeee-eeee-eeee-eeee-eeeeeeeeeeee\n'
+            '00:16:3E:C2:77:1D,host-192-168-0-4.openstacklocal.,192.168.0.4,'
+            'set:gggggggg-gggg-gggg-gggg-gggggggggggg\n00:00:0f:rr:rr:rr,'
+            'host-192-168-0-1.openstacklocal.,192.168.0.1,'
+            'set:rrrrrrrr-rrrr-rrrr-rrrr-rrrrrrrrrrrr\n').lstrip()
+        dm = self._get_dnsmasq(FakeDualStackNetworkingSingleDHCPTags())
+        dm._output_hosts_file()
+        self.safe.assert_has_calls([mock.call(exp_host_name, exp_host_data)])
+
     def test_host_and_opts_file_on_net_with_V6_stateless_and_V4_subnets(
                                                                     self):
         exp_host_name = '/dhcp/bbbbbbbb-bbbb-bbbb-bbbb-bbbbbbbbbbbb/host'
@@ -1901,6 +1932,36 @@ class TestDnsmasq(TestBase):
         self.conf.set_override("force_metadata", True)
         self.assertTrue(dhcp.Dnsmasq.should_enable_metadata(self.conf,
                                                             mock.ANY))
+
+    def _test__generate_opts_per_subnet_helper(self, config_opts,
+                                               expected_mdt_ip):
+        for key, value in config_opts.items():
+            self.conf.set_override(key, value)
+        dm = self._get_dnsmasq(FakeNetworkDhcpPort)
+        with mock.patch('neutron.agent.linux.ip_lib.IPDevice') as ipdev_mock:
+            list_addr = ipdev_mock.return_value.addr.list
+            list_addr.return_value = [{'cidr': alloc.ip_address + '/24'}
+                                      for alloc in FakeDhcpPort.fixed_ips]
+            options, idx_map = dm._generate_opts_per_subnet()
+
+        contains_metadata_ip = any(['%s/32' % dhcp.METADATA_DEFAULT_IP in line
+                                    for line in options])
+        self.assertEqual(expected_mdt_ip, contains_metadata_ip)
+
+    def test__generate_opts_per_subnet_no_metadata(self):
+        config = {'enable_isolated_metadata': False,
+                  'force_metadata': False}
+        self._test__generate_opts_per_subnet_helper(config, False)
+
+    def test__generate_opts_per_subnet_isolated_metadata_with_router(self):
+        config = {'enable_isolated_metadata': True,
+                  'force_metadata': False}
+        self._test__generate_opts_per_subnet_helper(config, True)
+
+    def test__generate_opts_per_subnet_forced_metadata(self):
+        config = {'enable_isolated_metadata': False,
+                  'force_metadata': True}
+        self._test__generate_opts_per_subnet_helper(config, True)
 
 
 class TestDeviceManager(TestConfBase):

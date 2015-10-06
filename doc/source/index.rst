@@ -55,6 +55,17 @@ Developer Docs
 
    devref/index
 
+Dashboards
+==========
+
+There is a collection of dashboards to help developers and reviewers
+located here.
+
+.. toctree::
+   :maxdepth: 2
+
+   dashboards/index
+
 API Extensions
 ==============
 

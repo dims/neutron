@@ -54,6 +54,7 @@ TEST_NETWORK_ID2 = 'net-id-2'
 class FakeVif(object):
     ofport = 99
     port_name = 'name'
+    vif_mac = 'aa:bb:cc:11:22:33'
 
 
 class MockFixedIntervalLoopingCall(object):
@@ -224,6 +225,38 @@ class TestOvsNeutronAgent(object):
             self.agent = self.mod_agent.OVSNeutronAgent(self._bridge_classes(),
                 **kwargs)
             self.assertEqual(expected, self.agent.int_br.datapath_type)
+
+    def test_agent_type_ovs(self):
+        # verify agent_type is default
+        expected = n_const.AGENT_TYPE_OVS
+        self.assertEqual(expected,
+                         self.agent.agent_state['agent_type'])
+
+    def test_agent_type_alt(self):
+        with mock.patch.object(self.mod_agent.OVSNeutronAgent,
+                               'setup_integration_br'),\
+            mock.patch.object(self.mod_agent.OVSNeutronAgent,
+                              'setup_ancillary_bridges',
+                              return_value=[]), \
+            mock.patch('neutron.agent.linux.utils.get_interface_mac',
+                       return_value='00:00:00:00:00:01'), \
+            mock.patch(
+                'neutron.agent.common.ovs_lib.BaseOVS.get_bridges'), \
+            mock.patch('oslo_service.loopingcall.FixedIntervalLoopingCall',
+                       new=MockFixedIntervalLoopingCall), \
+            mock.patch(
+                'neutron.agent.common.ovs_lib.OVSBridge.' 'get_vif_ports',
+                return_value=[]):
+            # validate setting non default agent_type
+            expected = 'alt agent type'
+            cfg.CONF.set_override('agent_type',
+                                  expected,
+                                  group='AGENT')
+            kwargs = self.mod_agent.create_agent_config_map(cfg.CONF)
+            self.agent = self.mod_agent.OVSNeutronAgent(self._bridge_classes(),
+                **kwargs)
+            self.assertEqual(expected,
+                             self.agent.agent_state['agent_type'])
 
     def test_restore_local_vlan_map_with_device_has_tag(self):
         self._test_restore_local_vlan_maps(2)
@@ -769,7 +802,7 @@ class TestOvsNeutronAgent(object):
             self.assertFalse(int_br.drop_port.called)
 
     def test_setup_physical_bridges(self):
-        with mock.patch.object(ip_lib, "device_exists") as devex_fn,\
+        with mock.patch.object(ip_lib.IPDevice, "exists") as devex_fn,\
                 mock.patch.object(sys, "exit"),\
                 mock.patch.object(utils, "execute"),\
                 mock.patch.object(self.agent, 'br_phys_cls') as phys_br_cls,\
@@ -813,7 +846,7 @@ class TestOvsNeutronAgent(object):
 
     def test_setup_physical_bridges_using_veth_interconnection(self):
         self.agent.use_veth_interconnection = True
-        with mock.patch.object(ip_lib, "device_exists") as devex_fn,\
+        with mock.patch.object(ip_lib.IPDevice, "exists") as devex_fn,\
                 mock.patch.object(sys, "exit"),\
                 mock.patch.object(utils, "execute") as utilsexec_fn,\
                 mock.patch.object(self.agent, 'br_phys_cls') as phys_br_cls,\
@@ -887,17 +920,6 @@ class TestOvsNeutronAgent(object):
                              "int_ofport")
             self.assertEqual(self.agent.phys_ofports["physnet1"],
                              "phy_ofport")
-
-    def test_get_peer_name(self):
-        bridge1 = "A_REALLY_LONG_BRIDGE_NAME1"
-        bridge2 = "A_REALLY_LONG_BRIDGE_NAME2"
-        self.agent.use_veth_interconnection = True
-        self.assertEqual(len(self.agent.get_peer_name('int-', bridge1)),
-                         n_const.DEVICE_NAME_MAX_LEN)
-        self.assertEqual(len(self.agent.get_peer_name('int-', bridge2)),
-                         n_const.DEVICE_NAME_MAX_LEN)
-        self.assertNotEqual(self.agent.get_peer_name('int-', bridge1),
-                            self.agent.get_peer_name('int-', bridge2))
 
     def test_setup_tunnel_br(self):
         self.tun_br = mock.Mock()
@@ -1360,6 +1382,13 @@ class TestOvsNeutronAgent(object):
             self.agent._handle_sigterm(None, None)
         self.assertFalse(mock_set_rpc.called)
 
+    def test_arp_spoofing_network_port(self):
+        int_br = mock.create_autospec(self.agent.int_br)
+        self.agent.setup_arp_spoofing_protection(
+            int_br, FakeVif(), {'device_owner': 'network:router_interface'})
+        self.assertTrue(int_br.delete_arp_spoofing_protection.called)
+        self.assertFalse(int_br.install_arp_spoofing_protection.called)
+
     def test_arp_spoofing_port_security_disabled(self):
         int_br = mock.create_autospec(self.agent.int_br)
         self.agent.setup_arp_spoofing_protection(
@@ -1369,7 +1398,7 @@ class TestOvsNeutronAgent(object):
 
     def test_arp_spoofing_basic_rule_setup(self):
         vif = FakeVif()
-        fake_details = {'fixed_ips': []}
+        fake_details = {'fixed_ips': [], 'device_owner': 'nobody'}
         self.agent.prevent_arp_spoofing = True
         int_br = mock.create_autospec(self.agent.int_br)
         self.agent.setup_arp_spoofing_protection(int_br, vif, fake_details)
@@ -1380,9 +1409,22 @@ class TestOvsNeutronAgent(object):
             [mock.call(ip_addresses=set(), port=vif.ofport)],
             int_br.install_arp_spoofing_protection.mock_calls)
 
+    def test_arp_spoofing_basic_rule_setup_fixed_ipv6(self):
+        vif = FakeVif()
+        fake_details = {'fixed_ips': [{'ip_address': 'fdf8:f53b:82e4::1'}],
+                        'device_owner': 'nobody'}
+        self.agent.prevent_arp_spoofing = True
+        br = mock.create_autospec(self.agent.int_br)
+        self.agent.setup_arp_spoofing_protection(br, vif, fake_details)
+        self.assertEqual(
+            [mock.call(port=vif.ofport)],
+            br.delete_arp_spoofing_protection.mock_calls)
+        self.assertTrue(br.install_icmpv6_na_spoofing_protection.called)
+
     def test_arp_spoofing_fixed_and_allowed_addresses(self):
         vif = FakeVif()
         fake_details = {
+            'device_owner': 'nobody',
             'fixed_ips': [{'ip_address': '192.168.44.100'},
                           {'ip_address': '192.168.44.101'}],
             'allowed_address_pairs': [{'ip_address': '192.168.44.102/32'},
@@ -1397,6 +1439,25 @@ class TestOvsNeutronAgent(object):
         self.assertEqual(
             [mock.call(port=vif.ofport, ip_addresses=addresses)],
             int_br.install_arp_spoofing_protection.mock_calls)
+
+    def test_arp_spoofing_fixed_and_allowed_addresses_ipv6(self):
+        vif = FakeVif()
+        fake_details = {
+            'device_owner': 'nobody',
+            'fixed_ips': [{'ip_address': '2001:db8::1'},
+                          {'ip_address': '2001:db8::2'}],
+            'allowed_address_pairs': [{'ip_address': '2001:db8::200',
+                                       'mac_address': 'aa:22:33:44:55:66'}]
+        }
+        self.agent.prevent_arp_spoofing = True
+        int_br = mock.create_autospec(self.agent.int_br)
+        self.agent.setup_arp_spoofing_protection(int_br, vif, fake_details)
+        # make sure all addresses are allowed including ipv6 LLAs
+        addresses = {'2001:db8::1', '2001:db8::2', '2001:db8::200',
+                     'fe80::a822:33ff:fe44:5566', 'fe80::a8bb:ccff:fe11:2233'}
+        self.assertEqual(
+            [mock.call(port=vif.ofport, ip_addresses=addresses)],
+            int_br.install_icmpv6_na_spoofing_protection.mock_calls)
 
     def test__get_ofport_moves(self):
         previous = {'port1': 1, 'port2': 2}
@@ -1451,6 +1512,14 @@ class TestOvsNeutronAgent(object):
         bridge.install_flood_to_tun.side_effect = add_new_vlan_mapping
         self.agent._setup_tunnel_port(bridge, 1, 2, tunnel_type=tunnel_type)
         self.assertIn('bar', self.agent.local_vlan_map)
+
+    def test_setup_entry_for_arp_reply_ignores_ipv6_addresses(self):
+        self.agent.arp_responder_enabled = True
+        ip = '2001:db8::1'
+        br = mock.Mock()
+        self.agent.setup_entry_for_arp_reply(
+            br, 'add', mock.Mock(), mock.Mock(), ip)
+        self.assertFalse(br.install_arp_responder.called)
 
 
 class TestOvsNeutronAgentOFCtl(TestOvsNeutronAgent,
@@ -1919,6 +1988,16 @@ class TestOvsDvrNeutronAgent(object):
         self._test_port_bound_for_dvr_on_vxlan_network(
             device_owner=n_const.DEVICE_OWNER_LOADBALANCER, ip_version=6)
 
+    def test_port_bound_for_dvr_with_lbaasv2_vip_ports(self):
+        self._test_port_bound_for_dvr_on_vlan_network(
+            device_owner=n_const.DEVICE_OWNER_LOADBALANCERV2)
+        self._test_port_bound_for_dvr_on_vlan_network(
+            device_owner=n_const.DEVICE_OWNER_LOADBALANCERV2, ip_version=6)
+        self._test_port_bound_for_dvr_on_vxlan_network(
+            device_owner=n_const.DEVICE_OWNER_LOADBALANCERV2)
+        self._test_port_bound_for_dvr_on_vxlan_network(
+            device_owner=n_const.DEVICE_OWNER_LOADBALANCERV2, ip_version=6)
+
     def test_port_bound_for_dvr_with_dhcp_ports(self):
         self._test_port_bound_for_dvr_on_vlan_network(
             device_owner=n_const.DEVICE_OWNER_DHCP)
@@ -2194,6 +2273,12 @@ class TestOvsDvrNeutronAgent(object):
             device_owner=n_const.DEVICE_OWNER_LOADBALANCER)
         self._test_treat_devices_removed_for_dvr(
             device_owner=n_const.DEVICE_OWNER_LOADBALANCER, ip_version=6)
+
+    def test_treat_devices_removed_for_dvr_with_lbaasv2_vip_ports(self):
+        self._test_treat_devices_removed_for_dvr(
+            device_owner=n_const.DEVICE_OWNER_LOADBALANCERV2)
+        self._test_treat_devices_removed_for_dvr(
+            device_owner=n_const.DEVICE_OWNER_LOADBALANCERV2, ip_version=6)
 
     def test_treat_devices_removed_for_dvr_with_dhcp_ports(self):
         self._test_treat_devices_removed_for_dvr(

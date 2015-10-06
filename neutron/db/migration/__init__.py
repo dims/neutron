@@ -15,10 +15,30 @@
 import contextlib
 import functools
 
+import alembic
 from alembic import context
 from alembic import op
 import sqlalchemy as sa
 from sqlalchemy.engine import reflection
+
+# Neutron milestones for upgrade aliases
+LIBERTY = 'liberty'
+MITAKA = 'mitaka'
+
+NEUTRON_MILESTONES = [
+    # earlier milestones were not tagged
+    LIBERTY,
+    MITAKA,
+]
+
+CREATION_OPERATIONS = (sa.sql.ddl.CreateIndex,
+                       sa.sql.ddl.CreateTable,
+                       sa.sql.ddl.CreateColumn,
+                       )
+DROP_OPERATIONS = (sa.sql.ddl.DropConstraint,
+                   sa.sql.ddl.DropIndex,
+                   sa.sql.ddl.DropTable,
+                   alembic.ddl.base.DropColumn)
 
 
 def skip_if_offline(func):

@@ -14,7 +14,6 @@
 #    under the License.
 
 import collections
-import hashlib
 import signal
 import sys
 import time
@@ -40,11 +39,13 @@ from neutron.api.rpc.handlers import dvr_rpc
 from neutron.common import config
 from neutron.common import constants as n_const
 from neutron.common import exceptions
+from neutron.common import ipv6_utils as ipv6
 from neutron.common import topics
 from neutron.common import utils as n_utils
 from neutron import context
 from neutron.i18n import _LE, _LI, _LW
 from neutron.plugins.common import constants as p_const
+from neutron.plugins.common import utils as p_utils
 from neutron.plugins.ml2.drivers.l2pop.rpc_manager import l2population_rpc
 from neutron.plugins.ml2.drivers.openvswitch.agent.common \
     import constants
@@ -71,9 +72,8 @@ class DeviceListRetrievalError(exceptions.NeutronException):
     message = _("Unable to retrieve port details for devices: %(devices)s ")
 
 
-# A class to represent a VIF (i.e., a port that has 'iface-id' and 'vif-mac'
-# attributes set).
 class LocalVLANMapping(object):
+
     def __init__(self, vlan, network_type, physical_network, segmentation_id,
                  vif_ports=None):
         if vif_ports is None:
@@ -94,6 +94,10 @@ class LocalVLANMapping(object):
 
 class OVSPluginApi(agent_rpc.PluginApi):
     pass
+
+
+def has_zero_prefixlen_address(ip_addresses):
+    return any(netaddr.IPNetwork(ip).prefixlen == 0 for ip in ip_addresses)
 
 
 class OVSNeutronAgent(sg_rpc.SecurityGroupAgentRpcCallbackMixin,
@@ -211,7 +215,7 @@ class OVSNeutronAgent(sg_rpc.SecurityGroupAgentRpcCallbackMixin,
                                self.enable_distributed_routing,
                                'log_agent_heartbeats':
                                self.conf.AGENT.log_agent_heartbeats},
-            'agent_type': n_const.AGENT_TYPE_OVS,
+            'agent_type': self.conf.AGENT.agent_type,
             'start_flag': True}
 
         if tunnel_types:
@@ -362,7 +366,7 @@ class OVSNeutronAgent(sg_rpc.SecurityGroupAgentRpcCallbackMixin,
         self.plugin_rpc = OVSPluginApi(topics.PLUGIN)
         self.sg_plugin_rpc = sg_rpc.SecurityGroupServerRpcApi(topics.PLUGIN)
         self.dvr_plugin_rpc = dvr_rpc.DVRServerRpcApi(topics.PLUGIN)
-        self.state_rpc = agent_rpc.PluginReportStateAPI(topics.PLUGIN)
+        self.state_rpc = agent_rpc.PluginReportStateAPI(topics.REPORTS)
 
         # RPC network init
         self.context = context.get_admin_context_without_session()
@@ -377,8 +381,7 @@ class OVSNeutronAgent(sg_rpc.SecurityGroupAgentRpcCallbackMixin,
                      [topics.DVR, topics.UPDATE],
                      [topics.NETWORK, topics.UPDATE]]
         if self.l2_pop:
-            consumers.append([topics.L2POPULATION,
-                              topics.UPDATE, self.conf.host])
+            consumers.append([topics.L2POPULATION, topics.UPDATE])
         self.connection = agent_rpc.create_consumers(self.endpoints,
                                                      self.topic,
                                                      consumers,
@@ -576,8 +579,12 @@ class OVSNeutronAgent(sg_rpc.SecurityGroupAgentRpcCallbackMixin,
         if not self.arp_responder_enabled:
             return
 
+        ip = netaddr.IPAddress(ip_address)
+        if ip.version == 6:
+            return
+
+        ip = str(ip)
         mac = str(netaddr.EUI(mac_address, dialect=_mac_mydialect))
-        ip = str(netaddr.IPAddress(ip_address))
 
         if action == 'add':
             br.install_arp_responder(local_vid, ip, mac)
@@ -858,21 +865,41 @@ class OVSNeutronAgent(sg_rpc.SecurityGroupAgentRpcCallbackMixin,
             LOG.info(_LI("Skipping ARP spoofing rules for port '%s' because "
                          "it has port security disabled"), vif.port_name)
             return
+        if port_details['device_owner'].startswith('network:'):
+            LOG.debug("Skipping ARP spoofing rules for network owned port "
+                      "'%s'.", vif.port_name)
+            return
         # collect all of the addresses and cidrs that belong to the port
         addresses = {f['ip_address'] for f in port_details['fixed_ips']}
+        mac_addresses = {vif.vif_mac}
         if port_details.get('allowed_address_pairs'):
             addresses |= {p['ip_address']
                           for p in port_details['allowed_address_pairs']}
+            mac_addresses |= {p['mac_address']
+                              for p in port_details['allowed_address_pairs']
+                              if p.get('mac_address')}
 
-        addresses = {ip for ip in addresses
-                     if netaddr.IPNetwork(ip).version == 4}
-        if any(netaddr.IPNetwork(ip).prefixlen == 0 for ip in addresses):
-            # don't try to install protection because a /0 prefix allows any
-            # address anyway and the ARP_SPA can only match on /1 or more.
-            return
+        ipv6_addresses = {ip for ip in addresses
+                          if netaddr.IPNetwork(ip).version == 6}
+        # Allow neighbor advertisements for LLA address.
+        ipv6_addresses |= {str(ipv6.get_ipv6_addr_by_EUI64(
+                               n_const.IPV6_LLA_PREFIX, mac))
+                           for mac in mac_addresses}
+        if not has_zero_prefixlen_address(ipv6_addresses):
+            # Install protection only when prefix is not zero because a /0
+            # prefix allows any address anyway and the nd_target can only
+            # match on /1 or more.
+            bridge.install_icmpv6_na_spoofing_protection(port=vif.ofport,
+                ip_addresses=ipv6_addresses)
 
-        bridge.install_arp_spoofing_protection(port=vif.ofport,
-                                               ip_addresses=addresses)
+        ipv4_addresses = {ip for ip in addresses
+                          if netaddr.IPNetwork(ip).version == 4}
+        if not has_zero_prefixlen_address(ipv4_addresses):
+            # Install protection only when prefix is not zero because a /0
+            # prefix allows any address anyway and the ARP_SPA can only
+            # match on /1 or more.
+            bridge.install_arp_spoofing_protection(port=vif.ofport,
+                                                   ip_addresses=ipv4_addresses)
 
     def port_unbound(self, vif_id, net_uuid=None):
         '''Unbind port.
@@ -1001,33 +1028,6 @@ class OVSNeutronAgent(sg_rpc.SecurityGroupAgentRpcCallbackMixin,
         self.tun_br.setup_default_table(self.patch_int_ofport,
                                         self.arp_responder_enabled)
 
-    def get_peer_name(self, prefix, name):
-        """Construct a peer name based on the prefix and name.
-
-        The peer name can not exceed the maximum length allowed for a linux
-        device. Longer names are hashed to help ensure uniqueness.
-        """
-        if len(prefix + name) <= n_const.DEVICE_NAME_MAX_LEN:
-            return prefix + name
-        # We can't just truncate because bridges may be distinguished
-        # by an ident at the end. A hash over the name should be unique.
-        # Leave part of the bridge name on for easier identification
-        hashlen = 6
-        namelen = n_const.DEVICE_NAME_MAX_LEN - len(prefix) - hashlen
-        if isinstance(name, six.text_type):
-            hashed_name = hashlib.sha1(name.encode('utf-8'))
-        else:
-            hashed_name = hashlib.sha1(name)
-        new_name = ('%(prefix)s%(truncated)s%(hash)s' %
-                    {'prefix': prefix, 'truncated': name[0:namelen],
-                     'hash': hashed_name.hexdigest()[0:hashlen]})
-        LOG.warning(_LW("Creating an interface named %(name)s exceeds the "
-                        "%(limit)d character limitation. It was shortened to "
-                        "%(new_name)s to fit."),
-                    {'name': name, 'limit': n_const.DEVICE_NAME_MAX_LEN,
-                     'new_name': new_name})
-        return new_name
-
     def setup_physical_bridges(self, bridge_mappings):
         '''Setup the physical network bridges.
 
@@ -1061,10 +1061,10 @@ class OVSNeutronAgent(sg_rpc.SecurityGroupAgentRpcCallbackMixin,
             self.phys_brs[physical_network] = br
 
             # interconnect physical and integration bridges using veth/patchs
-            int_if_name = self.get_peer_name(constants.PEER_INTEGRATION_PREFIX,
-                                             bridge)
-            phys_if_name = self.get_peer_name(constants.PEER_PHYSICAL_PREFIX,
-                                              bridge)
+            int_if_name = p_utils.get_interface_name(bridge,
+                                     prefix=constants.PEER_INTEGRATION_PREFIX)
+            phys_if_name = p_utils.get_interface_name(bridge,
+                                      prefix=constants.PEER_PHYSICAL_PREFIX)
             # Interface type of port for physical and integration bridges must
             # be same, so check only one of them.
             int_type = self.int_br.db_get_val("Interface", int_if_name, "type")
@@ -1074,8 +1074,9 @@ class OVSNeutronAgent(sg_rpc.SecurityGroupAgentRpcCallbackMixin,
                 if int_type == 'patch':
                     self.int_br.delete_port(int_if_name)
                     br.delete_port(phys_if_name)
-                if ip_lib.device_exists(int_if_name):
-                    ip_lib.IPDevice(int_if_name).link.delete()
+                device = ip_lib.IPDevice(int_if_name)
+                if device.exists():
+                    device.link.delete()
                     # Give udev a chance to process its rules here, to avoid
                     # race conditions between commands launched by udev rules
                     # and the subsequent call to ip_wrapper.add_veth
@@ -1757,7 +1758,8 @@ class OVSNeutronAgent(sg_rpc.SecurityGroupAgentRpcCallbackMixin,
         # Start everything.
         LOG.info(_LI("Agent initialized successfully, now running... "))
         signal.signal(signal.SIGTERM, self._handle_sigterm)
-        signal.signal(signal.SIGHUP, self._handle_sighup)
+        if hasattr(signal, 'SIGHUP'):
+            signal.signal(signal.SIGHUP, self._handle_sighup)
         with polling.get_polling_manager(
             self.minimize_polling,
             self.ovsdb_monitor_respawn_interval) as pm:

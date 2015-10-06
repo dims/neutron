@@ -59,6 +59,12 @@ Instead of reading the DB connection from the configuration file(s) the
 
  neutron-db-manage --database-connection mysql+pymysql://root:secret@127.0.0.1/neutron?charset=utf8 <commands>
 
+The ``branches``, ``current``, and ``history`` commands all accept a
+``--verbose`` option, which, when passed, will instruct ``neutron-db-manage``
+to display more verbose output for the specified command::
+
+ neutron-db-manage current --verbose
+
 For some commands the wrapper needs to know the entrypoint of the core plugin
 for the installation. This can be read from the configuration file(s) or
 specified using the ``--core_plugin`` option::
@@ -311,3 +317,20 @@ and then applying all available rules::
 
 It will apply all the rules from both the expand and the contract branches, in
 proper order.
+
+
+Tagging milestone revisions
+~~~~~~~~~~~~~~~~~~~~~~~~~~~
+
+When named release (liberty, mitaka, etc.) is done for neutron or a
+sub-project, the alembic revision scripts at the head of each branch for that
+release must be tagged. This is referred to as a milestone revision tag.
+
+For example, `here <https://review.openstack.org/228272>`_ is a patch that tags
+the liberty milestone revisions for the neutron-fwaas sub-project. Note that
+each branch (expand and contract) is tagged.
+
+Tagging milestones allows neutron-db-manage to upgrade the schema to a
+milestone release, e.g.::
+
+ neutron-db-manage upgrade liberty

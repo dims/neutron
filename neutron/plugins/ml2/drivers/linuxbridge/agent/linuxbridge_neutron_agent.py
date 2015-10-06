@@ -48,6 +48,7 @@ from neutron.common import utils as n_utils
 from neutron import context
 from neutron.i18n import _LE, _LI, _LW
 from neutron.plugins.common import constants as p_const
+from neutron.plugins.common import utils as p_utils
 from neutron.plugins.ml2.drivers.l2pop.rpc_manager \
     import l2population_rpc as l2pop_rpc
 from neutron.plugins.ml2.drivers.linuxbridge.agent import arp_protect
@@ -133,12 +134,29 @@ class LinuxBridgeManager(object):
         bridge_name = BRIDGE_NAME_PREFIX + network_id[0:11]
         return bridge_name
 
-    def get_subinterface_name(self, physical_interface, vlan_id):
+    def get_vlan_device_name(self, physical_interface, vlan_id):
         if not vlan_id:
-            LOG.warning(_LW("Invalid VLAN ID, will lead to incorrect "
-                            "subinterface name"))
-        subinterface_name = '%s.%s' % (physical_interface, vlan_id)
-        return subinterface_name
+            raise ValueError("No VLAN ID specified!")
+
+        vlan_len = len(str(vlan_id))
+        if vlan_len > 4:
+            raise ValueError("Invalid VLAN ID! ID exceeds 4 digits!")
+
+        vlan_postfix = '.%s' % vlan_id
+
+        # Handling for too long physical_interface names:
+        # Ensure that vlan devices that belong to the same logical network
+        # use the same naming pattern despite the hashing algorithm that is
+        # used in such cases. E.g.
+        # Interface name: "very_long_name" should NOT result in
+        # "veryHASHED.1111" and "very_loHASHED.1" but rather in
+        # "veryHASHED.1111" and "veryHASHED.1". This can be accomplished with
+        # requesting a smaller device name length for small vlan ids.
+        max_len = constants.DEVICE_NAME_MAX_LEN - (4 - vlan_len)
+        vlan_name = p_utils.get_interface_name(physical_interface,
+                                               postfix=vlan_postfix,
+                                               max_len=max_len)
+        return vlan_name
 
     def get_tap_device_name(self, interface_id):
         if not interface_id:
@@ -271,23 +289,23 @@ class LinuxBridgeManager(object):
 
     def ensure_vlan(self, physical_interface, vlan_id):
         """Create a vlan unless it already exists."""
-        interface = self.get_subinterface_name(physical_interface, vlan_id)
-        if not ip_lib.device_exists(interface):
+        vlan_device = self.get_vlan_device_name(physical_interface, vlan_id)
+        if not ip_lib.device_exists(vlan_device):
             LOG.debug("Creating subinterface %(interface)s for "
                       "VLAN %(vlan_id)s on interface "
                       "%(physical_interface)s",
-                      {'interface': interface, 'vlan_id': vlan_id,
+                      {'interface': vlan_device, 'vlan_id': vlan_id,
                        'physical_interface': physical_interface})
             if utils.execute(['ip', 'link', 'add', 'link',
                               physical_interface,
-                              'name', interface, 'type', 'vlan', 'id',
+                              'name', vlan_device, 'type', 'vlan', 'id',
                               vlan_id], run_as_root=True):
                 return
             if utils.execute(['ip', 'link', 'set',
-                              interface, 'up'], run_as_root=True):
+                              vlan_device, 'up'], run_as_root=True):
                 return
-            LOG.debug("Done creating subinterface %s", interface)
-        return interface
+            LOG.debug("Done creating subinterface %s", vlan_device)
+        return vlan_device
 
     def ensure_vxlan(self, segmentation_id):
         """Create a vxlan unless it already exists."""
@@ -453,9 +471,8 @@ class LinuxBridgeManager(object):
                       "this host, skipped", tap_device_name)
             return False
 
-        if physical_network:
-            bridge_name = self.get_existing_bridge_name(physical_network)
-        else:
+        bridge_name = self.get_existing_bridge_name(physical_network)
+        if not bridge_name:
             bridge_name = self.get_bridge_name(network_id)
 
         if network_type == p_const.TYPE_LOCAL:
@@ -501,7 +518,8 @@ class LinuxBridgeManager(object):
                                       tap_device_name)
 
     def delete_bridge(self, bridge_name):
-        if ip_lib.device_exists(bridge_name):
+        bridge_device = bridge_lib.BridgeDevice(bridge_name)
+        if bridge_device.exists():
             physical_interfaces = set(self.interface_mappings.values())
             interfaces_on_bridge = self.get_interfaces_on_bridge(bridge_name)
             for interface in interfaces_on_bridge:
@@ -523,7 +541,6 @@ class LinuxBridgeManager(object):
                         self.delete_interface(interface)
 
             LOG.debug("Deleting bridge %s", bridge_name)
-            bridge_device = bridge_lib.BridgeDevice(bridge_name)
             if bridge_device.link.set_down():
                 return
             if bridge_device.delbr():
@@ -531,7 +548,7 @@ class LinuxBridgeManager(object):
             LOG.debug("Done deleting bridge %s", bridge_name)
 
         else:
-            LOG.error(_LE("Cannot delete bridge %s, does not exist"),
+            LOG.debug("Cannot delete bridge %s; it does not exist",
                       bridge_name)
 
     def remove_empty_bridges(self):
@@ -547,14 +564,15 @@ class LinuxBridgeManager(object):
                 del self.network_map[network_id]
 
     def remove_interface(self, bridge_name, interface_name):
-        if ip_lib.device_exists(bridge_name):
+        bridge_device = bridge_lib.BridgeDevice(bridge_name)
+        if bridge_device.exists():
             if not self.is_device_on_bridge(interface_name):
                 return True
             LOG.debug("Removing device %(interface_name)s from bridge "
                       "%(bridge_name)s",
                       {'interface_name': interface_name,
                        'bridge_name': bridge_name})
-            if bridge_lib.BridgeDevice(bridge_name).delif(interface_name):
+            if bridge_device.delif(interface_name):
                 return False
             LOG.debug("Done removing device %(interface_name)s from bridge "
                       "%(bridge_name)s",
@@ -569,10 +587,10 @@ class LinuxBridgeManager(object):
             return False
 
     def delete_interface(self, interface):
-        if ip_lib.device_exists(interface):
+        device = self.ip.device(interface)
+        if device.exists():
             LOG.debug("Deleting interface %s",
                       interface)
-            device = self.ip.device(interface)
             device.link.set_down()
             device.link.delete()
             LOG.debug("Done deleting interface %s", interface)
@@ -911,7 +929,7 @@ class LinuxBridgeNeutronAgentRPC(service.Service):
         LOG.info(_LI("RPC agent_id: %s"), self.agent_id)
 
         self.topic = topics.AGENT
-        self.state_rpc = agent_rpc.PluginReportStateAPI(topics.PLUGIN)
+        self.state_rpc = agent_rpc.PluginReportStateAPI(topics.REPORTS)
         # RPC network init
         # Handle updates from service
         self.endpoints = [LinuxBridgeRpcCallbacks(self.context, self,
@@ -921,8 +939,7 @@ class LinuxBridgeNeutronAgentRPC(service.Service):
                      [topics.NETWORK, topics.DELETE],
                      [topics.SECURITY_GROUP, topics.UPDATE]]
         if cfg.CONF.VXLAN.l2_population:
-            consumers.append([topics.L2POPULATION,
-                              topics.UPDATE, cfg.CONF.host])
+            consumers.append([topics.L2POPULATION, topics.UPDATE])
         self.connection = agent_rpc.create_consumers(self.endpoints,
                                                      self.topic,
                                                      consumers)
@@ -936,10 +953,8 @@ class LinuxBridgeNeutronAgentRPC(service.Service):
         self.br_mgr = LinuxBridgeManager(bridge_mappings, interface_mappings)
 
     def remove_port_binding(self, network_id, physical_network, interface_id):
-        if physical_network:
-            bridge_name = self.br_mgr.get_existing_bridge_name(
-                physical_network)
-        else:
+        bridge_name = self.br_mgr.get_existing_bridge_name(physical_network)
+        if not bridge_name:
             bridge_name = self.br_mgr.get_bridge_name(network_id)
         tap_device_name = self.br_mgr.get_tap_device_name(interface_id)
         return self.br_mgr.remove_interface(bridge_name, tap_device_name)

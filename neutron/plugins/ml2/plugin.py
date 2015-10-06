@@ -118,7 +118,8 @@ class Ml2Plugin(db_base_plugin_v2.NeutronDbPluginV2,
                                     "multi-provider", "allowed-address-pairs",
                                     "extra_dhcp_opt", "subnet_allocation",
                                     "net-mtu", "vlan-transparent",
-                                    "address-scope", "dns-integration"]
+                                    "address-scope", "dns-integration",
+                                    "availability_zone"]
 
     @property
     def supported_extension_aliases(self):
@@ -146,17 +147,13 @@ class Ml2Plugin(db_base_plugin_v2.NeutronDbPluginV2,
         self.type_manager.initialize()
         self.extension_manager.initialize()
         self.mechanism_manager.initialize()
-
-        self._setup_rpc()
         self._setup_dhcp()
+        self._start_rpc_notifiers()
+        self.add_agent_status_check(self.agent_health_check)
         LOG.info(_LI("Modular L2 Plugin initialization complete"))
 
     def _setup_rpc(self):
         """Initialize components to support agent communication."""
-        self.notifier = rpc.AgentNotifierApi(topics.AGENT)
-        self.agent_notifiers[const.AGENT_TYPE_DHCP] = (
-            dhcp_rpc_agent_api.DhcpAgentNotifyAPI()
-        )
         self.endpoints = [
             rpc.RpcCallbacks(self.notifier, self.type_manager),
             securitygroups_rpc.SecurityGroupServerRpcCallback(),
@@ -179,11 +176,23 @@ class Ml2Plugin(db_base_plugin_v2.NeutronDbPluginV2,
         return self.mechanism_manager.supported_qos_rule_types
 
     @log_helpers.log_method_call
+    def _start_rpc_notifiers(self):
+        """Initialize RPC notifiers for agents."""
+        self.notifier = rpc.AgentNotifierApi(topics.AGENT)
+        self.agent_notifiers[const.AGENT_TYPE_DHCP] = (
+            dhcp_rpc_agent_api.DhcpAgentNotifyAPI()
+        )
+
+    @log_helpers.log_method_call
     def start_rpc_listeners(self):
         """Start the RPC loop to let the plugin communicate with agents."""
+        self._setup_rpc()
         self.topic = topics.PLUGIN
         self.conn = n_rpc.create_connection(new=True)
         self.conn.create_consumer(self.topic, self.endpoints, fanout=False)
+        self.conn.create_consumer(topics.REPORTS,
+                                  [agents_db.AgentExtRpcCallback()],
+                                  fanout=False)
         return self.conn.consume_in_threads()
 
     def _filter_nets_provider(self, context, networks, filters):
@@ -194,9 +203,9 @@ class Ml2Plugin(db_base_plugin_v2.NeutronDbPluginV2,
 
     def _get_host_port_if_changed(self, mech_context, attrs):
         binding = mech_context._binding
-        host = attrs and attrs.get(portbindings.HOST_ID)
-        if (attributes.is_attr_set(host) and binding.host != host):
-            return mech_context.current
+        if attrs and portbindings.HOST_ID in attrs:
+            if binding.host != attrs.get(portbindings.HOST_ID):
+                return mech_context.current
 
     def _check_mac_update_allowed(self, orig_port, port, binding):
         unplugged_types = (portbindings.VIF_TYPE_BINDING_FAILED,
@@ -712,7 +721,7 @@ class Ml2Plugin(db_base_plugin_v2.NeutronDbPluginV2,
         for port_id in port_ids:
             try:
                 self.delete_port(context, port_id)
-            except exc.PortNotFound:
+            except (exc.PortNotFound, sa_exc.ObjectDeletedError):
                 # concurrent port deletion can be performed by
                 # release_dhcp_port caused by concurrent subnet_delete
                 LOG.info(_LI("Port %s was deleted concurrently"), port_id)
@@ -725,7 +734,7 @@ class Ml2Plugin(db_base_plugin_v2.NeutronDbPluginV2,
         for subnet_id in subnet_ids:
             try:
                 self.delete_subnet(context, subnet_id)
-            except exc.SubnetNotFound:
+            except (exc.SubnetNotFound, sa_exc.ObjectDeletedError):
                 LOG.info(_LI("Subnet %s was deleted concurrently"),
                          subnet_id)
             except Exception:
@@ -1208,6 +1217,7 @@ class Ml2Plugin(db_base_plugin_v2.NeutronDbPluginV2,
             'context': context,
             'port': new_host_port,
             'mac_address_updated': mac_address_updated,
+            'original_port': original_port,
         }
         registry.notify(resources.PORT, events.AFTER_UPDATE, self, **kwargs)
 
@@ -1442,9 +1452,9 @@ class Ml2Plugin(db_base_plugin_v2.NeutronDbPluginV2,
         return self._bind_port_if_needed(port_context)
 
     @oslo_db_api.wrap_db_retry(
-        max_retries=db_api.MAX_RETRIES,
-        retry_on_deadlock=True, retry_on_request=True,
-        exception_checker=lambda e: isinstance(e, sa_exc.StaleDataError)
+        max_retries=db_api.MAX_RETRIES, retry_on_request=True,
+        exception_checker=lambda e: isinstance(e, (sa_exc.StaleDataError,
+                                                   os_db_exception.DBDeadlock))
     )
     def update_port_status(self, context, port_id, status, host=None,
                            network=None):

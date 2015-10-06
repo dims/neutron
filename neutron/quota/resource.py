@@ -102,7 +102,7 @@ class CountableResource(BaseResource):
         """Initializes a CountableResource.
 
         Countable resources are those resources which directly
-        correspond to objects in the database, i.e., netowk, subnet,
+        correspond to objects in the database, i.e., network, subnet,
         etc.,.  A CountableResource must be constructed with a counting
         function, which will be called to determine the current counts
         of the resource.
@@ -114,7 +114,7 @@ class CountableResource(BaseResource):
 
         :param name: The name of the resource, i.e., "instances".
         :param count: A callable which returns the count of the
-                      resource.  The arguments passed are as described
+                      resource. The arguments passed are as described
                       above.
         :param flag: The name of the flag or configuration option
                      which specifies the default value of the quota
@@ -211,9 +211,9 @@ class TrackedResource(BaseResource):
     # ensure that an UPDATE statement is emitted rather than an INSERT one
     @oslo_db_api.wrap_db_retry(
         max_retries=db_api.MAX_RETRIES,
-        retry_on_deadlock=True,
         exception_checker=lambda exc:
-        isinstance(exc, oslo_db_exception.DBDuplicateEntry))
+        isinstance(exc, (oslo_db_exception.DBDuplicateEntry,
+                         oslo_db_exception.DBDeadlock)))
     def _set_quota_usage(self, context, tenant_id, in_use):
         return quota_api.set_quota_usage(
             context, self.name, tenant_id, in_use=in_use)

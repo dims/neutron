@@ -162,6 +162,21 @@ class _ARPSpoofTestCase(object):
         self.dst_p.addr.add('%s/24' % self.dst_addr)
         net_helpers.assert_no_ping(self.src_namespace, self.dst_addr, count=2)
 
+    def test_arp_spoof_blocks_icmpv6_neigh_advt(self):
+        self.src_addr = '2000::1'
+        self.dst_addr = '2000::2'
+        # this will prevent the destination from responding (i.e., icmpv6
+        # neighbour advertisement) to the icmpv6 neighbour solicitation
+        # request for it's own address (2000::2) as spoofing rules added
+        # below only allow '2000::3'.
+        self._setup_arp_spoof_for_port(self.dst_p.name, ['2000::3'])
+        self.src_p.addr.add('%s/64' % self.src_addr)
+        self.dst_p.addr.add('%s/64' % self.dst_addr)
+        # make sure the IPv6 addresses are ready before pinging
+        self.src_p.addr.wait_until_address_ready(self.src_addr)
+        self.dst_p.addr.wait_until_address_ready(self.dst_addr)
+        net_helpers.assert_no_ping(self.src_namespace, self.dst_addr, count=2)
+
     def test_arp_spoof_blocks_request(self):
         # this will prevent the source from sending an ARP
         # request with its own address
@@ -184,6 +199,18 @@ class _ARPSpoofTestCase(object):
         self.dst_p.addr.add('%s/24' % self.dst_addr)
         net_helpers.assert_ping(self.src_namespace, self.dst_addr, count=2)
 
+    def test_arp_spoof_icmpv6_neigh_advt_allowed_address_pairs(self):
+        self.src_addr = '2000::1'
+        self.dst_addr = '2000::2'
+        self._setup_arp_spoof_for_port(self.dst_p.name, ['2000::3',
+                                                         self.dst_addr])
+        self.src_p.addr.add('%s/64' % self.src_addr)
+        self.dst_p.addr.add('%s/64' % self.dst_addr)
+        # make sure the IPv6 addresses are ready before pinging
+        self.src_p.addr.wait_until_address_ready(self.src_addr)
+        self.dst_p.addr.wait_until_address_ready(self.dst_addr)
+        net_helpers.assert_ping(self.src_namespace, self.dst_addr, count=2)
+
     def test_arp_spoof_allowed_address_pairs_0cidr(self):
         self._setup_arp_spoof_for_port(self.dst_p.name, ['9.9.9.9/0',
                                                          '1.2.3.4'])
@@ -201,12 +228,24 @@ class _ARPSpoofTestCase(object):
         self.dst_p.addr.add('%s/24' % self.dst_addr)
         net_helpers.assert_ping(self.src_namespace, self.dst_addr, count=2)
 
-    def _setup_arp_spoof_for_port(self, port, addrs, psec=True):
+    def test_arp_spoof_disable_network_port(self):
+        # block first and then disable port security to make sure old rules
+        # are cleared
+        self._setup_arp_spoof_for_port(self.dst_p.name, ['192.168.0.3'])
+        self._setup_arp_spoof_for_port(self.dst_p.name, ['192.168.0.3'],
+                                       device_owner='network:router_gateway')
+        self.src_p.addr.add('%s/24' % self.src_addr)
+        self.dst_p.addr.add('%s/24' % self.dst_addr)
+        net_helpers.assert_ping(self.src_namespace, self.dst_addr, count=2)
+
+    def _setup_arp_spoof_for_port(self, port, addrs, psec=True,
+                                  device_owner='nobody'):
         vif = next(
             vif for vif in self.br.get_vif_ports() if vif.port_name == port)
         ip_addr = addrs.pop()
         details = {'port_security_enabled': psec,
                    'fixed_ips': [{'ip_address': ip_addr}],
+                   'device_owner': device_owner,
                    'allowed_address_pairs': [
                         dict(ip_address=ip) for ip in addrs]}
         ovsagt.OVSNeutronAgent.setup_arp_spoofing_protection(

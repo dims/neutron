@@ -13,6 +13,7 @@
 #    under the License.
 
 import errno
+import re
 
 import eventlet
 import mock
@@ -562,6 +563,9 @@ class TestDvrServices(base.BaseTestCase):
     def test_is_dvr_serviced_with_lb_port(self):
         self._test_is_dvr_serviced(constants.DEVICE_OWNER_LOADBALANCER, True)
 
+    def test_is_dvr_serviced_with_lbv2_port(self):
+        self._test_is_dvr_serviced(constants.DEVICE_OWNER_LOADBALANCERV2, True)
+
     def test_is_dvr_serviced_with_dhcp_port(self):
         self._test_is_dvr_serviced(constants.DEVICE_OWNER_DHCP, True)
 
@@ -703,3 +707,12 @@ class TestRoundVal(base.BaseTestCase):
                                 (1, 1.49),
                                 (2, 1.5)):
             self.assertEqual(expected, utils.round_val(value))
+
+
+class TestGetRandomString(base.BaseTestCase):
+    def test_get_random_string(self):
+        length = 127
+        random_string = utils.get_random_string(length)
+        self.assertEqual(length, len(random_string))
+        regex = re.compile('^[0-9a-fA-F]+$')
+        self.assertIsNotNone(regex.match(random_string))

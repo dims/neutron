@@ -24,7 +24,6 @@ import struct
 import tempfile
 import threading
 
-from debtcollector import removals
 import eventlet
 from eventlet.green import subprocess
 from eventlet import greenthread
@@ -44,7 +43,6 @@ from neutron import wsgi
 
 
 LOG = logging.getLogger(__name__)
-config.register_root_helper(cfg.CONF)
 
 
 class RootwrapDaemonHelper(object):
@@ -211,11 +209,6 @@ def find_child_pids(pid):
                 ctxt.reraise = False
                 return []
     return [x.strip() for x in raw_pids.split('\n') if x.strip()]
-
-
-@removals.remove(message='Use neutron.common.utils.ensure_dir instead.')
-def ensure_dir(*args, **kwargs):
-    return utils.ensure_dir(*args, **kwargs)
 
 
 def _get_conf_base(cfg_root, uuid, ensure_conf_dir):

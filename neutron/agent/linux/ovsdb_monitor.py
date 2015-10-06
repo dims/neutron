@@ -40,22 +40,9 @@ class OvsdbMonitor(async_process.AsyncProcess):
         if format:
             cmd.append('--format=%s' % format)
         super(OvsdbMonitor, self).__init__(cmd, run_as_root=True,
-                                           respawn_interval=respawn_interval)
-
-    def _read_stdout(self):
-        data = self._process.stdout.readline()
-        if not data:
-            return
-        self._stdout_lines.put(data)
-        LOG.debug('Output received from ovsdb monitor: %s', data)
-        return data
-
-    def _read_stderr(self):
-        data = super(OvsdbMonitor, self)._read_stderr()
-        if data:
-            LOG.error(_LE('Error received from ovsdb monitor: %s'), data)
-            # Do not return value to ensure that stderr output will
-            # stop the monitor.
+                                           respawn_interval=respawn_interval,
+                                           log_output=True,
+                                           die_on_error=True)
 
 
 class SimpleInterfaceMonitor(OvsdbMonitor):
@@ -73,7 +60,6 @@ class SimpleInterfaceMonitor(OvsdbMonitor):
             format='json',
             respawn_interval=respawn_interval,
         )
-        self.data_received = False
         self.new_events = {'added': [], 'removed': []}
 
     @property
@@ -122,13 +108,3 @@ class SimpleInterfaceMonitor(OvsdbMonitor):
             with eventlet.timeout.Timeout(timeout):
                 while not self.is_active():
                     eventlet.sleep()
-
-    def _kill(self, *args, **kwargs):
-        self.data_received = False
-        super(SimpleInterfaceMonitor, self)._kill(*args, **kwargs)
-
-    def _read_stdout(self):
-        data = super(SimpleInterfaceMonitor, self)._read_stdout()
-        if data and not self.data_received:
-            self.data_received = True
-        return data

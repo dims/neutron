@@ -232,6 +232,17 @@ class OVSBridgeTestCase(OVSBridgeTestBase):
         expected = set([vif_ports[0].vif_id])
         self.assertEqual(expected, ports)
 
+    def test_get_vif_port_set_on_empty_bridge_returns_empty_set(self):
+        # Create a port on self.br
+        self.create_ovs_vif_port()
+
+        # Create another, empty bridge
+        br_2 = self.useFixture(net_helpers.OVSBridgeFixture()).bridge
+
+        # Assert that get_vif_port_set on an empty bridge returns an empty set,
+        # and does not return the other bridge's ports.
+        self.assertEqual(set(), br_2.get_vif_port_set())
+
     def test_get_ports_attributes(self):
         port_names = [self.create_ovs_port()[0], self.create_ovs_port()[0]]
         db_ports = self.br.get_ports_attributes('Interface', columns=['name'])
@@ -273,16 +284,6 @@ class OVSBridgeTestCase(OVSBridgeTestBase):
         self.assertSetEqual(nonvifs, set(self.br.get_port_name_list()))
         self.br.delete_ports(all_ports=True)
         self.assertEqual(len(self.br.get_port_name_list()), 0)
-
-    def test_reset_bridge(self):
-        self.create_ovs_port()
-        self.br.reset_bridge()
-        self.assertEqual(len(self.br.get_port_name_list()), 0)
-        self._assert_br_fail_mode([])
-
-    def test_reset_bridge_secure_mode(self):
-        self.br.reset_bridge(secure_mode=True)
-        self._assert_br_fail_mode(ovs_lib.FAILMODE_SECURE)
 
     def test_set_controller_connection_mode(self):
         controllers = ['tcp:192.0.2.0:6633']

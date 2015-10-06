@@ -13,6 +13,8 @@
 #    License for the specific language governing permissions and limitations
 #    under the License.
 
+import random
+import string
 import warnings
 
 import fixtures
@@ -63,6 +65,24 @@ class WarningsFixture(fixtures.Fixture):
         for wtype in self.warning_types:
             warnings.filterwarnings(
                 "always", category=wtype, module='^neutron\\.')
+
+
+class SafeCleanupFixture(fixtures.Fixture):
+    """Catch errors in daughter fixture cleanup."""
+
+    def __init__(self, fixture):
+        self.fixture = fixture
+
+    def _setUp(self):
+
+        def cleanUp():
+            try:
+                self.fixture.cleanUp()
+            except Exception:
+                pass
+
+        self.fixture.setUp()
+        self.addCleanup(cleanUp)
 
 
 """setup_mock_calls and verify_mock_calls are convenient methods
@@ -121,3 +141,11 @@ class UnorderedList(list):
 
     def __neq__(self, other):
         return not self == other
+
+
+def get_random_string(n=10):
+    return ''.join(random.choice(string.ascii_lowercase) for _ in range(n))
+
+
+def get_random_boolean():
+    return bool(random.getrandbits(1))

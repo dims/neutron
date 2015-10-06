@@ -84,8 +84,14 @@ for a port or a network:
 
 Each QoS policy contains zero or more QoS rules. A policy is then applied to a
 network or a port, making all rules of the policy applied to the corresponding
-Neutron resource (for a network, applying a policy means that the policy will
-be applied to all ports that belong to it).
+Neutron resource.
+
+When applied through a network association, policy rules could apply or not
+to neutron internal ports (like router, dhcp, load balancer, etc..). The QosRule
+base object provides a default should_apply_to_port method which could be
+overridden. In the future we may want to have a flag in QoSNetworkPolicyBinding
+or QosRule to enforce such type of application (for example when limiting all
+the ingress of routers devices on an external network automatically).
 
 From database point of view, following objects are defined in schema:
 
@@ -161,7 +167,7 @@ Note that rules are loaded in a non lazy way, meaning they are all fetched from
 the database on policy fetch.
 
 For Qos<type>Rule objects, an extendable approach was taken to allow easy
-addition of objects for new rule types. To accomodate this, fields common to
+addition of objects for new rule types. To accommodate this, fields common to
 all types are put into a base class called QosRule that is then inherited into
 type-specific rule implementations that, ideally, only define additional fields
 and some other minor things.

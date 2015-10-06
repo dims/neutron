@@ -15,6 +15,7 @@
 import eventlet
 
 from neutron.agent.linux import async_process
+from neutron.agent.linux import utils
 from neutron.tests import base
 
 
@@ -24,7 +25,7 @@ class AsyncProcessTestFramework(base.BaseTestCase):
         super(AsyncProcessTestFramework, self).setUp()
         self.test_file_path = self.get_temp_file_path('test_async_process.tmp')
         self.data = [str(x) for x in range(4)]
-        with file(self.test_file_path, 'w') as f:
+        with open(self.test_file_path, 'w') as f:
             f.writelines('%s\n' % item for item in self.data)
 
     def _check_stdout(self, proc):
@@ -67,5 +68,11 @@ class TestAsyncProcess(AsyncProcessTestFramework):
 
         # Ensure that the same output is read twice
         self._check_stdout(proc)
-        proc._kill_process(proc.pid)
+        pid = proc.pid
+        utils.execute(['kill', '-9', pid])
+        utils.wait_until_true(
+            lambda: proc.is_active() and pid != proc.pid,
+            timeout=5,
+            sleep=0.01,
+            exception=RuntimeError(_("Async process didn't respawn")))
         self._check_stdout(proc)

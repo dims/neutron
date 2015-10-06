@@ -119,7 +119,7 @@ class SriovNicSwitchAgent(object):
         LOG.info(_LI("RPC agent_id: %s"), self.agent_id)
 
         self.topic = topics.AGENT
-        self.state_rpc = agent_rpc.PluginReportStateAPI(topics.PLUGIN)
+        self.state_rpc = agent_rpc.PluginReportStateAPI(topics.REPORTS)
         # RPC network init
         # Handle updates from service
         self.endpoints = [SriovNicSwitchRpcCallbacks(self.context, self,
@@ -210,8 +210,11 @@ class SriovNicSwitchAgent(object):
             try:
                 self.eswitch_mgr.set_device_state(device, pci_slot,
                                                   admin_state_up)
+            except exc.IpCommandOperationNotSupportedError:
+                LOG.warning(_LW("Device %s does not support state change"),
+                            device)
             except exc.SriovNicError:
-                LOG.exception(_LE("Failed to set device %s state"), device)
+                LOG.warning(_LW("Failed to set device %s state"), device)
                 return
             if admin_state_up:
                 # update plugin about port status
