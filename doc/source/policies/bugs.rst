@@ -308,13 +308,17 @@ more will be added over time if needed.
 +-------------------------------+---------------------------------------+----------------------+
 | ovs-lib_                      | A bug affecting OVS Lib               | Terry Wilson         |
 +-------------------------------+---------------------------------------+----------------------+
+| py34_                         | Issues affecting the Python 3 porting | Cedric Brandily      |
++-------------------------------+---------------------------------------+----------------------+
 | qos_                          | A bug affecting ML2/QoS               | Miguel Ajo           |
 +-------------------------------+---------------------------------------+----------------------+
 | released-neutronclient_       | A bug affecting released clients      | Kyle Mestery         |
 +-------------------------------+---------------------------------------+----------------------+
 | release-subproject_           | A request to release a subproject     | Kyle Mestery         |
 +-------------------------------+---------------------------------------+----------------------+
-| rfe_                          | Feature enhancements                  | Drivers Team         |
+| rfe_                          | Feature enhancements being screened   | Drivers Team         |
++-------------------------------+---------------------------------------+----------------------+
+| rfe-approved_                 | Approved feature enhancements         | Drivers Team         |
 +-------------------------------+---------------------------------------+----------------------+
 | sg-fw_                        | A bug affecting security groups       | Kevin Benton         |
 +-------------------------------+---------------------------------------+----------------------+
@@ -520,6 +524,14 @@ OVS Lib
 * `OVS Lib - All bugs <https://bugs.launchpad.net/neutron/+bugs?field.tag=ovs-lib>`_
 * `OVS Lib - In progress <https://bugs.launchpad.net/neutron/+bugs?field.status%3Alist=INPROGRESS&field.tag=ovs-lib>`_
 
+.. _py34:
+
+PY34
+++++
+
+* `Py34 - All bugs <https://bugs.launchpad.net/neutron/+bugs?field.tag=py34>`_
+* `Py34 - In progress <https://bugs.launchpad.net/neutron/+bugs?field.status%3Alist=INPROGRESS&field.tag=py34>`_
+
 .. _qos:
 
 QoS
@@ -551,6 +563,14 @@ RFE
 
 * `RFE - All bugs <https://bugs.launchpad.net/neutron/+bugs?field.tag=rfe>`_
 * `RFE - In progress <https://bugs.launchpad.net/neutron/+bugs?field.status%3Alist=INPROGRESS&field.tag=rfe>`_
+
+.. _rfe-approved:
+
+RFE-Approved
+++++++++++++
+
+* `RFE-Approved - All bugs <https://bugs.launchpad.net/neutron/+bugs?field.tag=rfe-approved>`_
+* `RFE-Approved - In progress <https://bugs.launchpad.net/neutron/+bugs?field.status%3Alist=INPROGRESS&field.tag=rfe-approved>`_
 
 .. _sriov-pci-pt:
 
