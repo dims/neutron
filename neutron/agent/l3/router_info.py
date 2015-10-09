@@ -24,7 +24,7 @@ from neutron.common import constants as l3_constants
 from neutron.common import exceptions as n_exc
 from neutron.common import ipv6_utils
 from neutron.common import utils as common_utils
-from neutron.i18n import _LW
+from neutron.i18n import _LE, _LW
 
 LOG = logging.getLogger(__name__)
 INTERNAL_DEV_PREFIX = namespaces.INTERNAL_DEV_PREFIX
@@ -504,11 +504,17 @@ class RouterInfo(object):
             interface_name,
             ip_cidrs,
             namespace=ns_name,
-            gateway_ips=gateway_ips,
             extra_subnets=ex_gw_port.get('extra_subnets', []),
             preserve_ips=preserve_ips,
-            enable_ra_on_gw=enable_ra_on_gw,
             clean_connections=True)
+
+        device = ip_lib.IPDevice(interface_name, namespace=ns_name)
+        for ip in gateway_ips or []:
+            device.route.add_gateway(ip)
+
+        if enable_ra_on_gw:
+            self.driver.configure_ipv6_ra(ns_name, interface_name)
+
         for fixed_ip in ex_gw_port['fixed_ips']:
             ip_lib.send_ip_addr_adv_notif(ns_name,
                                           interface_name,
@@ -666,9 +672,9 @@ class RouterInfo(object):
             fip_statuses = self.configure_fip_addresses(interface_name)
 
         except (n_exc.FloatingIpSetupException,
-                n_exc.IpTablesApplyException) as e:
+                n_exc.IpTablesApplyException):
                 # All floating IPs must be put in error state
-                LOG.exception(e)
+                LOG.exception(_LE("Failed to process floating IPs."))
                 fip_statuses = self.put_fips_in_error_state()
         finally:
             agent.update_fip_statuses(

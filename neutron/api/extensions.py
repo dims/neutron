@@ -21,6 +21,7 @@ import os
 
 from oslo_config import cfg
 from oslo_log import log as logging
+from oslo_middleware import base
 import routes
 import six
 import webob.dec
@@ -240,7 +241,7 @@ class ExtensionController(wsgi.Controller):
         raise webob.exc.HTTPNotFound(msg)
 
 
-class ExtensionMiddleware(wsgi.Middleware):
+class ExtensionMiddleware(base.ConfigurableMiddleware):
     """Extensions middleware for WSGI."""
 
     def __init__(self, application,
@@ -478,9 +479,8 @@ class ExtensionManager(object):
             LOG.debug('Ext alias: %s', extension.get_alias())
             LOG.debug('Ext description: %s', extension.get_description())
             LOG.debug('Ext updated: %s', extension.get_updated())
-        except AttributeError as ex:
-            LOG.exception(_LE("Exception loading extension: %s"),
-                          six.text_type(ex))
+        except AttributeError:
+            LOG.exception(_LE("Exception loading extension"))
             return False
         return True
 
