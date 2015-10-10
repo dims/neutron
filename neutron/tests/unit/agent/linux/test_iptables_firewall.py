@@ -27,6 +27,7 @@ from neutron.agent.linux import iptables_firewall
 from neutron.agent import securitygroups_rpc as sg_cfg
 from neutron.common import constants
 from neutron.common import exceptions as n_exc
+from neutron.common import utils
 from neutron.tests import base
 from neutron.tests.unit.api.v2 import test_base
 
@@ -149,7 +150,7 @@ class IptablesFirewallTestCase(BaseIptablesFirewallTestCase):
                  mock.call.add_chain('sfake_dev'),
                  mock.call.add_rule(
                      'sfake_dev',
-                     '-s 10.0.0.1 -m mac --mac-source FF:FF:FF:FF:FF:FF '
+                     '-s 10.0.0.1/32 -m mac --mac-source FF:FF:FF:FF:FF:FF '
                      '-j RETURN',
                      comment=ic.PAIR_ALLOW),
                  mock.call.add_rule(
@@ -933,7 +934,7 @@ class IptablesFirewallTestCase(BaseIptablesFirewallTestCase):
                                   egress_expected_call=None):
         port = self._fake_port()
         ethertype = rule['ethertype']
-        prefix = FAKE_IP[ethertype]
+        prefix = utils.ip_to_cidr(FAKE_IP[ethertype])
         filter_inst = self.v4filter_inst
         dhcp_rule = [mock.call.add_rule(
             'ofake_dev',
@@ -1180,7 +1181,7 @@ class IptablesFirewallTestCase(BaseIptablesFirewallTestCase):
                  mock.call.add_chain('sfake_dev'),
                  mock.call.add_rule(
                      'sfake_dev',
-                     '-s 10.0.0.1 -m mac --mac-source FF:FF:FF:FF:FF:FF '
+                     '-s 10.0.0.1/32 -m mac --mac-source FF:FF:FF:FF:FF:FF '
                      '-j RETURN',
                      comment=ic.PAIR_ALLOW),
                  mock.call.add_rule(
@@ -1252,7 +1253,7 @@ class IptablesFirewallTestCase(BaseIptablesFirewallTestCase):
                  mock.call.add_chain('sfake_dev'),
                  mock.call.add_rule(
                      'sfake_dev',
-                     '-s 10.0.0.1 -m mac --mac-source FF:FF:FF:FF:FF:FF '
+                     '-s 10.0.0.1/32 -m mac --mac-source FF:FF:FF:FF:FF:FF '
                      '-j RETURN',
                      comment=ic.PAIR_ALLOW),
                  mock.call.add_rule(
@@ -1422,12 +1423,12 @@ class IptablesFirewallTestCase(BaseIptablesFirewallTestCase):
                  mock.call.add_chain('sfake_dev'),
                  mock.call.add_rule(
                      'sfake_dev',
-                     '-s 10.0.0.1 -m mac --mac-source FF:FF:FF:FF:FF:FF '
+                     '-s 10.0.0.1/32 -m mac --mac-source FF:FF:FF:FF:FF:FF '
                      '-j RETURN',
                      comment=ic.PAIR_ALLOW),
                  mock.call.add_rule(
                      'sfake_dev',
-                     '-s 10.0.0.2 -m mac --mac-source FF:FF:FF:FF:FF:FF '
+                     '-s 10.0.0.2/32 -m mac --mac-source FF:FF:FF:FF:FF:FF '
                      '-j RETURN',
                      comment=ic.PAIR_ALLOW),
                  mock.call.add_rule(
@@ -1817,8 +1818,8 @@ class IptablesFirewallEnhancedIpsetTestCase(BaseIptablesFirewallTestCase):
                           for ip in other_ips])
 
     def test_build_ipv4v6_mac_ip_list(self):
-        mac_oth = 'ffff-ffff-ffff'
-        mac_unix = 'ff:ff:ff:ff:ff:ff'
+        mac_oth = 'ffff-ff0f-ffff'
+        mac_unix = 'FF:FF:FF:0F:FF:FF'
         ipv4 = FAKE_IP['IPv4']
         ipv6 = FAKE_IP['IPv6']
         fake_ipv4_pair = []

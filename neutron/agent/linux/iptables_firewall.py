@@ -30,6 +30,7 @@ from neutron.agent.linux import utils
 from neutron.common import constants
 from neutron.common import exceptions as n_exc
 from neutron.common import ipv6_utils
+from neutron.common import utils as c_utils
 from neutron.extensions import portsecurity as psec
 from neutron.i18n import _LI
 
@@ -49,6 +50,11 @@ LINUX_DEV_PREFIX_LEN = 3
 LINUX_DEV_LEN = 14
 MAX_CONNTRACK_ZONES = 65535
 comment_rule = iptables_manager.comment_rule
+
+
+class mac_iptables(netaddr.mac_eui48):
+    """mac format class for netaddr to match iptables representation."""
+    word_sep = ':'
 
 
 class IptablesFirewallDriver(firewall.FirewallDriver):
@@ -360,6 +366,8 @@ class IptablesFirewallDriver(firewall.FirewallDriver):
                                    '-m mac --mac-source %s -j RETURN'
                                    % mac.upper(), comment=ic.PAIR_ALLOW)
                 else:
+                    # we need to convert it into a prefix to match iptables
+                    ip = c_utils.ip_to_cidr(ip)
                     table.add_rule(chain_name,
                                    '-s %s -m mac --mac-source %s -j RETURN'
                                    % (ip, mac.upper()), comment=ic.PAIR_ALLOW)
@@ -368,7 +376,7 @@ class IptablesFirewallDriver(firewall.FirewallDriver):
 
     def _build_ipv4v6_mac_ip_list(self, mac, ip_address, mac_ipv4_pairs,
                                   mac_ipv6_pairs):
-        mac = str(netaddr.EUI(mac, dialect=netaddr.mac_unix))
+        mac = str(netaddr.EUI(mac, dialect=mac_iptables))
         if netaddr.IPNetwork(ip_address).version == 4:
             mac_ipv4_pairs.append((mac, ip_address))
         else:
@@ -617,6 +625,13 @@ class IptablesFirewallDriver(firewall.FirewallDriver):
         #NOTE (nati) : source_group_id is converted to list of source_
         # ip_prefix in server side
         if ip_prefix:
+            if '/' not in ip_prefix:
+                # we need to convert it into a prefix to match iptables
+                ip_prefix = c_utils.ip_to_cidr(ip_prefix)
+            elif ip_prefix.endswith('/0'):
+                # an allow for every address is not a constraint so
+                # iptables drops it
+                return []
             return ['-%s' % direction, ip_prefix]
         return []
 
