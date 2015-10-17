@@ -67,19 +67,19 @@ the plugin/driver repo should not have Neutron in the affected projects section.
 However, you should add Neutron (Or any other project) to that list only if you
 expect that a patch is needed to that repo in order to solve the bug.
 
-It also worth adding that that some of these projects are part of the so
+It's also worth adding that some of these projects are part of the so
 called Neutron `stadium <http://governance.openstack.org/reference/projects/neutron.html#deliverables-and-tags>`_.
 Because of that, their release is managed centrally by the Neutron
-release team; requests for releases need to funnelled and screened
-properly before they can happen. To this aim, the process should be like
-the following:
+release team; requests for releases need to be funnelled and screened
+properly before they can happen. To this aim, the process to request a release
+is as follows:
 
 * Create a bug report to your Launchpad project: provide details as to what
   you would like to release;
 * Add Neutron to the list of affected projects.
 * Add 'release-subproject' tag to the list of tags for the bug report.
 * The Neutron release management team will watch these bugs, and work with
-  you to have the request fulfilled.
+  you to have the request fulfilled by following the instructions found `here <http://docs.openstack.org/developer/neutron/devref/sub_project_guidelines.html#sub-project-release-process>`_.
 
 
 .. _guidelines:
@@ -104,7 +104,7 @@ Bug Report Template
 ~~~~~~~~~~~~~~~~~~~
 
 The more information you provide, the higher the chance of speedy triaging and
-resolution: identifing the problem is half the solution. To this aim, when
+resolution: identifying the problem is half the solution. To this aim, when
 writing a bug report, please consider supplying the following details and
 following these suggestions:
 
@@ -157,7 +157,7 @@ following these suggestions:
   This does not mean you are gonna get the backport, as the stable team needs
   to follow the `stable branch policy <https://wiki.openstack.org/wiki/StableBranch#Stable_branch_policy>`_
   for merging fixes to stable branches.
-* Attachments: consider attaching logs, truncated log snippets are seldomly
+* Attachments: consider attaching logs, truncated log snippets are rarely
   useful. Be proactive, and consider attaching redacted configuration files
   if you can, as that will speed up the resolution process greatly.
 
@@ -174,7 +174,7 @@ The process of bug triaging consists of the following steps:
   as a duplicate of the previous bug.
 * Check if the bug meets the requirements of a good bug report, by checking
   that the guidelines_ are being followed. Omitted information is still
-  acceptable if the issue is clear nonethless; use your good judgement and
+  acceptable if the issue is clear nonetheless; use your good judgement and
   your experience. Consult another core member/PTL if in doubt. If the bug
   report needs some love, mark the bug as 'Incomplete', point the submitter
   to this document and hope he/she turns around quickly with the missing
