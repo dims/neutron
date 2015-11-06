@@ -146,7 +146,8 @@ class APIv2TestCase(APIv2TestBase):
         fields.extend(policy_attrs)
         return fields
 
-    def _get_collection_kwargs(self, skipargs=[], **kwargs):
+    def _get_collection_kwargs(self, skipargs=None, **kwargs):
+        skipargs = skipargs or []
         args_list = ['filters', 'fields', 'sorts', 'limit', 'marker',
                      'page_reverse']
         args_dict = dict(
@@ -1390,7 +1391,7 @@ class QuotaTest(APIv2TestBase):
         super(QuotaTest, self).setUp()
         # Use mock to let the API use a different QuotaEngine instance for
         # unit test in this class. This will ensure resource are registered
-        # again and instanciated with neutron.quota.resource.CountableResource
+        # again and instantiated with neutron.quota.resource.CountableResource
         replacement_registry = resource_registry.ResourceRegistry()
         registry_patcher = mock.patch('neutron.quota.resource_registry.'
                                       'ResourceRegistry.get_instance')

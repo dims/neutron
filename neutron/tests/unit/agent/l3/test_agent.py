@@ -185,6 +185,16 @@ class TestBasicRouterOperations(BasicRouterOperationsFramework):
         # Make sure the exceptional code path has coverage
         agent.enqueue_state_change(non_existent_router, 'master')
 
+    def test_enqueue_state_change_metadata_disable(self):
+        self.conf.set_override('enable_metadata_proxy', False)
+        agent = l3_agent.L3NATAgent(HOSTNAME, self.conf)
+        router = mock.Mock()
+        router_info = mock.MagicMock()
+        agent.router_info[router.id] = router_info
+        agent._update_metadata_proxy = mock.Mock()
+        agent.enqueue_state_change(router.id, 'master')
+        self.assertFalse(agent._update_metadata_proxy.call_count)
+
     def test_periodic_sync_routers_task_raise_exception(self):
         agent = l3_agent.L3NATAgent(HOSTNAME, self.conf)
         self.plugin_api.get_routers.side_effect = ValueError
@@ -361,8 +371,11 @@ class TestBasicRouterOperations(BasicRouterOperationsFramework):
             self.device_exists.return_value = False
             ri.get_snat_port_for_internal_port = mock.Mock(
                 return_value=sn_port)
+            ri._delete_arp_cache_for_internal_port = mock.Mock()
             ri._snat_redirect_modify = mock.Mock()
             ri.internal_network_removed(port)
+            self.assertEqual(
+                1, ri._delete_arp_cache_for_internal_port.call_count)
             ri._snat_redirect_modify.assert_called_with(
                 sn_port, port,
                 ri.get_internal_device_name(port['id']),
@@ -1715,16 +1728,7 @@ class TestBasicRouterOperations(BasicRouterOperationsFramework):
                                                         '-bar')
         self.mock_ip.del_veth.assert_called_once_with('rfp-aaaa')
 
-    def test_destroy_router_namespace_skips_ns_removal(self):
-        self.conf.set_override('router_delete_namespaces', False)
-        agent = l3_agent.L3NATAgent(HOSTNAME, self.conf)
-        ns = namespaces.Namespace(
-            'qrouter-bar', self.conf, agent.driver, agent.use_ipv6)
-        ns.create()
-        ns.delete()
-        self.assertEqual(0, self.mock_ip.netns.delete.call_count)
-
-    def test_destroy_router_namespace_removes_ns(self):
+    def test_destroy_router_namespace(self):
         agent = l3_agent.L3NATAgent(HOSTNAME, self.conf)
         ns = namespaces.Namespace(
             'qrouter-bar', self.conf, agent.driver, agent.use_ipv6)

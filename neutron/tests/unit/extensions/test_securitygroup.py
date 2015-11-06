@@ -213,8 +213,9 @@ class SecurityGroupTestPlugin(db_base_plugin_v2.NeutronDbPluginV2,
                                                                    network)
 
     def get_ports(self, context, filters=None, fields=None,
-                  sorts=[], limit=None, marker=None,
+                  sorts=None, limit=None, marker=None,
                   page_reverse=False):
+        sorts = sorts or []
         neutron_lports = super(SecurityGroupTestPlugin, self).get_ports(
             context, filters, sorts=sorts, limit=limit, marker=marker,
             page_reverse=page_reverse)
@@ -416,6 +417,17 @@ class TestSecurityGroups(SecurityGroupDBTestCase):
             rule = self._build_security_group_rule(
                 security_group_id, 'ingress', const.PROTO_NAME_TCP, '22',
                 '22', None, None, ethertype=ethertype)
+            res = self._create_security_group_rule(self.fmt, rule)
+            self.deserialize(self.fmt, res)
+            self.assertEqual(res.status_int, webob.exc.HTTPBadRequest.code)
+
+    def test_create_security_group_rule_ethertype_invalid_for_protocol(self):
+        name = 'webservers'
+        description = 'my webservers'
+        with self.security_group(name, description) as sg:
+            security_group_id = sg['security_group']['id']
+            rule = self._build_security_group_rule(
+                security_group_id, 'ingress', const.PROTO_NAME_ICMP_V6)
             res = self._create_security_group_rule(self.fmt, rule)
             self.deserialize(self.fmt, res)
             self.assertEqual(res.status_int, webob.exc.HTTPBadRequest.code)

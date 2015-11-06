@@ -96,6 +96,9 @@ class DictModel(dict):
     def __delattr__(self, name):
         del self[name]
 
+    def __str__(self):
+        return "id=%s, network_id=%s" % (self.id, self.network_id)
+
 
 class NetModel(DictModel):
 
@@ -228,7 +231,7 @@ class DhcpLocalProcess(DhcpBase):
             LOG.warning(_LW('Failed trying to delete interface: %s'),
                         self.interface_name)
 
-        if self.conf.dhcp_delete_namespaces and self.network.namespace:
+        if self.network.namespace:
             ns_ip = ip_lib.IPWrapper(namespace=self.network.namespace)
             try:
                 ns_ip.netns.delete(self.network.namespace)
@@ -577,7 +580,7 @@ class Dnsmasq(DhcpLocalProcess):
             # Even with an infinite lease, a client may choose to renew a
             # previous lease on reboot or interface bounce so we should have
             # an entry for it.
-            # Dnsmasq timestamp format for an infinite lease is  is 0.
+            # Dnsmasq timestamp format for an infinite lease is 0.
             timestamp = 0
         else:
             timestamp = int(time.time()) + self.conf.dhcp_lease_duration

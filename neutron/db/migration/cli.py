@@ -32,6 +32,8 @@ from neutron.db import migration
 
 HEAD_FILENAME = 'HEAD'
 HEADS_FILENAME = 'HEADS'
+CONTRACT_HEAD_FILENAME = 'CONTRACT_HEAD'
+EXPAND_HEAD_FILENAME = 'EXPAND_HEAD'
 
 CURRENT_RELEASE = migration.MITAKA
 RELEASES = (
@@ -142,6 +144,12 @@ def add_alembic_subparser(sub, cmd):
     return sub.add_parser(cmd, help=getattr(alembic_command, cmd).__doc__)
 
 
+def add_branch_options(parser):
+    group = parser.add_mutually_exclusive_group()
+    group.add_argument('--expand', action='store_true')
+    group.add_argument('--contract', action='store_true')
+
+
 def _find_milestone_revisions(config, milestone, branch=None):
     """Return the revision(s) for a given milestone."""
     script = alembic_script.ScriptDirectory.from_config(config)
@@ -229,12 +237,21 @@ def _check_bootstrap_new_branch(branch, version_path, addn_kwargs):
 
 
 def do_revision(config, cmd):
-    '''Generate new revision files, one per branch.'''
-    do_alembic_command(config, cmd,
-                       message=CONF.command.message,
-                       autogenerate=CONF.command.autogenerate,
-                       sql=CONF.command.sql)
-    update_head_file(config)
+    kwargs = {
+        'message': CONF.command.message,
+        'autogenerate': CONF.command.autogenerate,
+        'sql': CONF.command.sql,
+    }
+    if CONF.command.expand:
+        kwargs['head'] = 'expand@head'
+    elif CONF.command.contract:
+        kwargs['head'] = 'contract@head'
+
+    do_alembic_command(config, cmd, **kwargs)
+    if _use_separate_migration_branches(config):
+        update_head_files(config)
+    else:
+        update_head_file(config)
 
 
 def _get_release_labels(labels):
@@ -327,12 +344,14 @@ def _get_branch_points(script):
 def validate_head_file(config):
     '''Check that HEAD file contains the latest head for the branch.'''
     if _use_separate_migration_branches(config):
-        return
-    _validate_head_file(config)
+        _validate_head_files(config)
+    else:
+        _validate_head_file(config)
 
 
 @debtcollector.removals.remove(message=BRANCHLESS_WARNING)
 def _validate_head_file(config):
+    '''Check that HEAD file contains the latest head for the branch.'''
     script = alembic_script.ScriptDirectory.from_config(config)
     expected_head = script.get_heads()
     head_path = _get_head_file_path(config)
@@ -348,22 +367,63 @@ def _validate_head_file(config):
         % expected_head)
 
 
-def update_head_file(config):
-    '''Update HEAD file with the latest branch head.'''
-    if _use_separate_migration_branches(config):
-        # Kill any HEAD(S) files because we don't rely on them for branch-aware
-        # chains anymore
-        files_to_remove = [
-            _get_head_file_path(config), _get_heads_file_path(config)
-        ]
-        for file_ in files_to_remove:
-            fileutils.delete_if_exists(file_)
+def _get_heads_map(config):
+    script = alembic_script.ScriptDirectory.from_config(config)
+    heads = script.get_heads()
+    head_map = {}
+    for head in heads:
+        if CONTRACT_BRANCH in script.get_revision(head).branch_labels:
+            head_map[CONTRACT_BRANCH] = head
+        else:
+            head_map[EXPAND_BRANCH] = head
+    return head_map
+
+
+def _check_head(branch_name, head_file, head):
+    try:
+        with open(head_file) as file_:
+            observed_head = file_.read().strip()
+    except IOError:
+        pass
+    else:
+        if observed_head != head:
+            alembic_util.err(
+                _('%(branch)s HEAD file does not match migration timeline '
+                  'head, expected: %(head)s') % {'branch': branch_name.title(),
+                                                 'head': head})
+
+
+def _validate_head_files(config):
+    '''Check that HEAD files contain the latest head for the branch.'''
+    contract_head = _get_contract_head_file_path(config)
+    expand_head = _get_expand_head_file_path(config)
+    if not os.path.exists(contract_head) or not os.path.exists(expand_head):
+        alembic_util.warn(_("Repository does not contain HEAD files for "
+                            "contract and expand branches."))
         return
-    _update_head_file(config)
+    head_map = _get_heads_map(config)
+    _check_head(CONTRACT_BRANCH, contract_head, head_map[CONTRACT_BRANCH])
+    _check_head(EXPAND_BRANCH, expand_head, head_map[EXPAND_BRANCH])
+
+
+def update_head_files(config):
+    '''Update HEAD files with the latest branch heads.'''
+    head_map = _get_heads_map(config)
+    contract_head = _get_contract_head_file_path(config)
+    expand_head = _get_expand_head_file_path(config)
+    with open(contract_head, 'w+') as f:
+        f.write(head_map[CONTRACT_BRANCH] + '\n')
+    with open(expand_head, 'w+') as f:
+        f.write(head_map[EXPAND_BRANCH] + '\n')
+
+    old_head_file = _get_head_file_path(config)
+    old_heads_file = _get_heads_file_path(config)
+    for file_ in (old_head_file, old_heads_file):
+        fileutils.delete_if_exists(file_)
 
 
 @debtcollector.removals.remove(message=BRANCHLESS_WARNING)
-def _update_head_file(config):
+def update_head_file(config):
     script = alembic_script.ScriptDirectory.from_config(config)
     head = script.get_heads()
     with open(_get_head_file_path(config), 'w+') as f:
@@ -392,10 +452,7 @@ def add_command_parsers(subparsers):
                         default='',
                         help='Change MySQL storage engine of current '
                              'existing tables')
-
-    group = parser.add_mutually_exclusive_group()
-    group.add_argument('--expand', action='store_true')
-    group.add_argument('--contract', action='store_true')
+    add_branch_options(parser)
 
     parser.set_defaults(func=do_upgrade)
 
@@ -412,6 +469,7 @@ def add_command_parsers(subparsers):
     parser.add_argument('-m', '--message')
     parser.add_argument('--autogenerate', action='store_true')
     parser.add_argument('--sql', action='store_true')
+    add_branch_options(parser)
     parser.set_defaults(func=do_revision)
 
 
@@ -470,6 +528,24 @@ def _get_heads_file_path(config):
     return os.path.join(
         _get_root_versions_dir(config),
         HEADS_FILENAME)
+
+
+def _get_contract_head_file_path(config):
+    '''
+    Return the path of the file that is used to maintain contract head
+    '''
+    return os.path.join(
+        _get_root_versions_dir(config),
+        CONTRACT_HEAD_FILENAME)
+
+
+def _get_expand_head_file_path(config):
+    '''
+    Return the path of the file that is used to maintain expand head
+    '''
+    return os.path.join(
+        _get_root_versions_dir(config),
+        EXPAND_HEAD_FILENAME)
 
 
 def _get_version_branch_path(config, release=None, branch=None):

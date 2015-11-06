@@ -95,8 +95,8 @@ check-requirements jobs in project-config. For example, see `this patch
 Stable branches
 ---------------
 
-Stable branches for libraries should be created at the same time when
-corresponding neutron stable branches are cut off. This is to avoid situations
+Stable branches for subprojects should be created at the same time when
+corresponding neutron stable branches are created. This is to avoid situations
 when a postponed cut-off results in a stable branch that contains some patches
 that belong to the next release. This would require reverting patches, and this
 is something you should avoid.
@@ -113,6 +113,22 @@ team <https://review.openstack.org/#/admin/groups/539,members>`_.
 
 More info on stable branch process can be found on `the following page
 <https://wiki.openstack.org/wiki/StableBranch>`_.
+
+Stable merge requirements
+-------------------------
+
+Merges into stable branches are handled by members of the `neutron-stable-maint
+gerrit group <https://review.openstack.org/#/admin/groups/539,members>`_. The
+reason for this is to ensure consistency among stable branches, and compliance
+with policies for stable backports.
+
+For sub-projects who participate in the Neutron Stadium effort and who also
+create and utilize stable branches, there is an expectation around what is
+allowed to be merged in these stable branches. The Stadium projects should be
+following the stable branch policies as defined by on the `Stable Branch wiki
+<https://wiki.openstack.org/wiki/StableBranch#Stable_branch_policy>`_. This
+means that, among other things, no features are allowed to be backported into
+stable branches.
 
 Releases
 --------
@@ -132,13 +148,13 @@ Sub-Project Release Process
 
 Only members of the `neutron-release
 <https://review.openstack.org/#/admin/groups/150,members>`_ gerrit group can do
-releases. Make sure you talk to a member of neutron-release to perform your
-release.
+releases. The same group can create stable branches. Make sure you talk to
+a member of neutron-release to perform your release.
 
 To release a sub-project, follow the following steps:
 
 * First, follow the process found `here <http://docs.openstack.org/developer/neutron/policies/bugs.html#plugin-and-driver-repositories>`_
-  for creating a bug for your release.
+  for creating a bug for your release and/or stable branch creation.
 * For projects which have not moved to post-versioning, we need to push an
   alpha tag to avoid pbr complaining. A member of the neutron-release group
   will handle this.
@@ -148,8 +164,8 @@ To release a sub-project, follow the following steps:
   setup.cfg.
 * A member of neutron-release will then `tag the release
   <http://docs.openstack.org/infra/manual/drivers.html#tagging-a-release>`_,
-  which will release the code to PyPi.
-* The releases will now be on PyPi. A sub-project owner should verify this by
+  which will release the code to PyPI.
+* The releases will now be on PyPI. A sub-project owner should verify this by
   going to an URL similar to
   `this <https://pypi.python.org/pypi/networking-odl>`_.
 * A sub-project owner should next go to Launchpad and release this version

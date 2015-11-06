@@ -101,8 +101,6 @@ repo but are summarized here to describe the functionality they provide.
 +===============================+=======================+
 | dragonflow_                   |           l3          |
 +-------------------------------+-----------------------+
-| group-based-policy_           |         intent        |
-+-------------------------------+-----------------------+
 | kuryr_                        |         docker        |
 +-------------------------------+-----------------------+
 | networking-ale-omniswitch_    |          ml2          |
@@ -127,8 +125,6 @@ repo but are summarized here to describe the functionality they provide.
 +-------------------------------+-----------------------+
 | networking-hyperv_            |          ml2          |
 +-------------------------------+-----------------------+
-| networking-ibm_               |         ml2,l3        |
-+-------------------------------+-----------------------+
 | networking-l2gw_              |         l2            |
 +-------------------------------+-----------------------+
 | networking-midonet_           |        core,lb        |
@@ -150,8 +146,6 @@ repo but are summarized here to describe the functionality they provide.
 | networking-ovs-dpdk_          |          ml2          |
 +-------------------------------+-----------------------+
 | networking-plumgrid_          |          core         |
-+-------------------------------+-----------------------+
-| networking-portforwarding_    |          l3           |
 +-------------------------------+-----------------------+
 | neutron-powervm_              |          ml2          |
 +-------------------------------+-----------------------+
@@ -200,7 +194,7 @@ Arista
 BaGPipe
 +++++++
 
-* Git: https://git.openstack.org/cgit/stackforge/networking-bagpipe-l2
+* Git: https://git.openstack.org/cgit/openstack/networking-bagpipe-l2
 * Launchpad: https://launchpad.net/bagpipe-l2
 * Pypi: https://pypi.python.org/pypi/bagpipe-l2
 
@@ -224,7 +218,7 @@ Big Switch Networks
 Brocade
 +++++++
 
-* Git: https://git.openstack.org/cgit/stackforge/networking-brocade
+* Git: https://git.openstack.org/cgit/openstack/networking-brocade
 * Launchpad: https://launchpad.net/networking-brocade
 * PyPI: https://pypi.python.org/pypi/networking-brocade
 
@@ -235,6 +229,7 @@ Calico
 
 * Git: https://git.openstack.org/cgit/openstack/networking-calico
 * Launchpad: https://launchpad.net/networking-calico
+* PyPI: https://pypi.python.org/pypi/networking-calico
 
 .. _networking-cisco:
 
@@ -252,14 +247,14 @@ DragonFlow
 
 * Git: https://git.openstack.org/cgit/openstack/dragonflow
 * Launchpad: https://launchpad.net/dragonflow
-* PyPi: https://pypi.python.org/pypi/DragonFlow
+* PyPI: https://pypi.python.org/pypi/DragonFlow
 
 .. _networking-edge-vpn:
 
 Edge VPN
 ++++++++
 
-* Git: https://git.openstack.org/cgit/stackforge/networking-edge-vpn
+* Git: https://git.openstack.org/cgit/openstack/networking-edge-vpn
 * Launchpad: https://launchpad.net/edge-vpn
 
 .. _networking-fujitsu:
@@ -276,26 +271,9 @@ FUJITSU
 Hyper-V
 +++++++
 
-* Git: https://git.openstack.org/cgit/stackforge/networking-hyperv
+* Git: https://git.openstack.org/cgit/openstack/networking-hyperv
 * Launchpad: https://launchpad.net/networking-hyperv
-* PyPi: https://pypi.python.org/pypi/networking-hyperv
-
-.. _group-based-policy:
-
-Group Based Policy
-++++++++++++++++++
-
-* Git: https://git.openstack.org/cgit/stackforge/group-based-policy
-* Launchpad: https://launchpad.net/group-based-policy
-* PyPi: https://pypi.python.org/pypi/group-based-policy
-
-.. _networking-ibm:
-
-IBM SDNVE
-+++++++++
-
-* Git: https://git.openstack.org/cgit/stackforge/networking-ibm
-* Launchpad: https://launchpad.net/networking-ibm
+* PyPI: https://pypi.python.org/pypi/networking-hyperv
 
 .. _kuryr:
 
@@ -328,7 +306,7 @@ MidoNet
 Mellanox
 ++++++++
 
-* Git: https://git.openstack.org/cgit/stackforge/networking-mlnx
+* Git: https://git.openstack.org/cgit/openstack/networking-mlnx
 * Launchpad: https://launchpad.net/networking-mlnx
 
 .. _networking-nec:
@@ -336,7 +314,7 @@ Mellanox
 NEC
 +++
 
-* Git: https://git.openstack.org/cgit/stackforge/networking-nec
+* Git: https://git.openstack.org/cgit/openstack/networking-nec
 * Launchpad: https://launchpad.net/networking-nec
 * PyPI: https://pypi.python.org/pypi/networking-nec
 
@@ -387,7 +365,7 @@ Open Virtual Network
 Open DPDK
 +++++++++
 
-* Git: https://git.openstack.org/cgit/stackforge/networking-ovs-dpdk
+* Git: https://git.openstack.org/cgit/openstack/networking-ovs-dpdk
 * Launchpad: https://launchpad.net/networking-ovs-dpdk
 
 .. _networking-plumgrid:
@@ -404,17 +382,9 @@ PLUMgrid
 PowerVM
 +++++++
 
-* Git: https://git.openstack.org/cgit/stackforge/neutron-powervm
+* Git: https://git.openstack.org/cgit/openstack/networking-powervm
 * Launchpad: https://launchpad.net/neutron-powervm
 * PyPI: https://pypi.python.org/pypi/neutron-powervm
-
-.. _networking-portforwarding:
-
-PortForwarding
-++++++++++++++
-
-* Git: https://git.openstack.org/cgit/stackforge/networking-portforwarding
-* Launchpad: https://launchpad.net/networking-portforwarding
 
 .. _networking-sfc:
 

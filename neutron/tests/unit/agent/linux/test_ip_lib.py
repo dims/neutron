@@ -793,21 +793,21 @@ class TestIpAddrCommand(TestIPCmdBase):
 
     def test_list(self):
         expected = [
-            dict(scope='global', dadfailed=False, tentative=False,
+            dict(name='eth0', scope='global', dadfailed=False, tentative=False,
                  dynamic=False, cidr='172.16.77.240/24'),
-            dict(scope='global', dadfailed=False, tentative=False,
+            dict(name='eth0', scope='global', dadfailed=False, tentative=False,
                  dynamic=True, cidr='2001:470:9:1224:5595:dd51:6ba2:e788/64'),
-            dict(scope='link', dadfailed=False, tentative=True,
+            dict(name='eth0', scope='link', dadfailed=False, tentative=True,
                  dynamic=False, cidr='fe80::3023:39ff:febc:22ae/64'),
-            dict(scope='link', dadfailed=True, tentative=True,
+            dict(name='eth0', scope='link', dadfailed=True, tentative=True,
                  dynamic=False, cidr='fe80::3023:39ff:febc:22af/64'),
-            dict(scope='global', dadfailed=False, tentative=False,
+            dict(name='eth0', scope='global', dadfailed=False, tentative=False,
                  dynamic=True, cidr='2001:470:9:1224:fd91:272:581e:3a32/64'),
-            dict(scope='global', dadfailed=False, tentative=False,
+            dict(name='eth0', scope='global', dadfailed=False, tentative=False,
                  dynamic=True, cidr='2001:470:9:1224:4508:b885:5fb:740b/64'),
-            dict(scope='global', dadfailed=False, tentative=False,
+            dict(name='eth0', scope='global', dadfailed=False, tentative=False,
                  dynamic=True, cidr='2001:470:9:1224:dfcc:aaff:feb9:76ce/64'),
-            dict(scope='link', dadfailed=False, tentative=False,
+            dict(name='eth0', scope='link', dadfailed=False, tentative=False,
                  dynamic=False, cidr='fe80::dfcc:aaff:feb9:76ce/64')]
 
         test_cases = [ADDR_SAMPLE, ADDR_SAMPLE2]
@@ -839,7 +839,7 @@ class TestIpAddrCommand(TestIPCmdBase):
 
     def test_list_filtered(self):
         expected = [
-            dict(scope='global', tentative=False, dadfailed=False,
+            dict(name='eth0', scope='global', tentative=False, dadfailed=False,
                  dynamic=False, cidr='172.16.77.240/24')]
 
         test_cases = [ADDR_SAMPLE, ADDR_SAMPLE2]
@@ -1181,7 +1181,8 @@ class TestIpNetnsCommand(TestIPCmdBase):
             execute.assert_called_once_with(
                 ['ip', 'netns', 'exec', 'ns',
                  'sysctl', '-w', 'net.ipv4.conf.all.promote_secondaries=1'],
-                run_as_root=True, check_exit_code=True, extra_ok_codes=None)
+                run_as_root=True, check_exit_code=True, extra_ok_codes=None,
+                log_fail_as_error=True)
 
     def test_delete_namespace(self):
         with mock.patch('neutron.agent.common.utils.execute'):
@@ -1196,7 +1197,8 @@ class TestIpNetnsCommand(TestIPCmdBase):
                                              'link', 'list'],
                                             run_as_root=True,
                                             check_exit_code=True,
-                                            extra_ok_codes=None)
+                                            extra_ok_codes=None,
+                                            log_fail_as_error=True)
 
     def test_execute_env_var_prepend(self):
         self.parent.namespace = 'ns'
@@ -1207,7 +1209,8 @@ class TestIpNetnsCommand(TestIPCmdBase):
                 ['ip', 'netns', 'exec', 'ns', 'env'] +
                 ['%s=%s' % (k, v) for k, v in env.items()] +
                 ['ip', 'link', 'list'],
-                run_as_root=True, check_exit_code=True, extra_ok_codes=None)
+                run_as_root=True, check_exit_code=True, extra_ok_codes=None,
+                log_fail_as_error=True)
 
     def test_execute_nosudo_with_no_namespace(self):
         with mock.patch('neutron.agent.common.utils.execute') as execute:
@@ -1216,7 +1219,8 @@ class TestIpNetnsCommand(TestIPCmdBase):
             execute.assert_called_once_with(['test'],
                                             check_exit_code=True,
                                             extra_ok_codes=None,
-                                            run_as_root=False)
+                                            run_as_root=False,
+                                            log_fail_as_error=True)
 
 
 class TestDeviceExists(base.BaseTestCase):

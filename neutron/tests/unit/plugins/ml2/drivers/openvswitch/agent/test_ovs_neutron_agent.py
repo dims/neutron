@@ -165,38 +165,19 @@ class TestOvsNeutronAgent(object):
         with mock.patch.object(self.agent, 'int_br', autospec=True) as int_br:
             int_br.db_get_val.return_value = db_get_val
             int_br.set_db_attribute.return_value = True
-            self.agent.port_bound(port, net_uuid, 'local', None, None,
-                                  fixed_ips, "compute:None", False)
+            needs_binding = self.agent.port_bound(
+                port, net_uuid, 'local', None, None,
+                fixed_ips, "compute:None", False)
         if db_get_val is None:
             self.assertEqual(0, int_br.set_db_attribute.call_count)
+            self.assertFalse(needs_binding)
         else:
             vlan_mapping = {'net_uuid': net_uuid,
                             'network_type': 'local',
-                            'physical_network': None,
-                            'segmentation_id': None}
+                            'physical_network': None}
             int_br.set_db_attribute.assert_called_once_with(
                 "Port", mock.ANY, "other_config", vlan_mapping)
-
-    def _test_restore_local_vlan_maps(self, tag):
-        port = mock.Mock()
-        port.port_name = 'fake_port'
-        local_vlan_map = {'net_uuid': 'fake_network_id',
-                          'network_type': 'vlan',
-                          'physical_network': 'fake_network',
-                          'segmentation_id': 1}
-        with mock.patch.object(self.agent, 'int_br') as int_br, \
-            mock.patch.object(self.agent, 'provision_local_vlan') as \
-                provision_local_vlan:
-            int_br.get_vif_ports.return_value = [port]
-            int_br.get_ports_attributes.return_value = [{
-                'name': port.port_name, 'other_config': local_vlan_map,
-                'tag': tag
-            }]
-            self.agent._restore_local_vlan_map()
-            if tag:
-                self.assertTrue(provision_local_vlan.called)
-            else:
-                self.assertFalse(provision_local_vlan.called)
+            self.assertTrue(needs_binding)
 
     def test_datapath_type_system(self):
         # verify kernel datapath is default
@@ -261,11 +242,38 @@ class TestOvsNeutronAgent(object):
             self.assertEqual(expected,
                              self.agent.agent_state['agent_type'])
 
+    def _test_restore_local_vlan_maps(self, tag, segmentation_id='1'):
+        port = mock.Mock()
+        port.port_name = 'fake_port'
+        net_uuid = 'fake_network_id'
+        local_vlan_map = {'net_uuid': net_uuid,
+                          'network_type': 'vlan',
+                          'physical_network': 'fake_network'}
+        if segmentation_id is not None:
+            local_vlan_map['segmentation_id'] = segmentation_id
+        with mock.patch.object(self.agent, 'int_br') as int_br:
+            int_br.get_vif_ports.return_value = [port]
+            int_br.get_ports_attributes.return_value = [{
+                'name': port.port_name, 'other_config': local_vlan_map,
+                'tag': tag
+            }]
+            self.agent._restore_local_vlan_map()
+            expected_hints = {}
+            if tag:
+                expected_hints[net_uuid] = tag
+            self.assertEqual(expected_hints, self.agent._local_vlan_hints)
+
     def test_restore_local_vlan_map_with_device_has_tag(self):
         self._test_restore_local_vlan_maps(2)
 
     def test_restore_local_vlan_map_with_device_no_tag(self):
         self._test_restore_local_vlan_maps([])
+
+    def test_restore_local_vlan_map_no_segmentation_id(self):
+        self._test_restore_local_vlan_maps(2, segmentation_id=None)
+
+    def test_restore_local_vlan_map_segmentation_id_compat(self):
+        self._test_restore_local_vlan_maps(2, segmentation_id='None')
 
     def test_check_agent_configurations_for_dvr_raises(self):
         self.agent.enable_distributed_routing = True
@@ -417,6 +425,7 @@ class TestOvsNeutronAgent(object):
         devices_up = ['tap1']
         devices_down = ['tap2']
         self.agent.local_vlan_map["net1"] = mock.Mock()
+        self.agent.local_vlan_map["net1"].vlan = "1"
         ovs_db_list = [{'name': 'tap1', 'tag': []},
                        {'name': 'tap2', 'tag': []}]
         vif_port1 = mock.Mock()
@@ -443,6 +452,10 @@ class TestOvsNeutronAgent(object):
             update_devices.assert_called_once_with(mock.ANY, devices_up,
                                                    devices_down,
                                                    mock.ANY, mock.ANY)
+            set_db_attribute_calls = \
+                [mock.call.set_db_attribute("Port", "tap1", "tag", "1"),
+                 mock.call.set_db_attribute("Port", "tap2", "tag", "1")]
+            int_br.assert_has_calls(set_db_attribute_calls, any_order=True)
 
     def _test_arp_spoofing(self, enable_prevent_arp_spoofing):
         self.agent.prevent_arp_spoofing = enable_prevent_arp_spoofing
@@ -692,6 +705,32 @@ class TestOvsNeutronAgent(object):
                 set(['eth1', 'tap1']), False)
             setup_port_filters.assert_called_once_with(
                 set(), port_info.get('updated', set()))
+
+    def test_process_network_ports_call_order(self):
+        port_info = {'current': set(['tap0', 'tap1']),
+                     'updated': set(['tap1']),
+                     'removed': set([]),
+                     'added': set(['eth1'])}
+        with mock.patch.object(self.agent, "treat_devices_added_or_updated",
+                return_value=([], ['tap1'], ['eth1'])) \
+                as treat_devices_added_or_updated, \
+                mock.patch.object(self.agent, "_bind_devices") \
+                as _bind_devices, \
+                mock.patch.object(self.agent.sg_agent, "setup_port_filters") \
+                as setup_port_filters:
+            parent = mock.MagicMock()
+            parent.attach_mock(treat_devices_added_or_updated,
+                               'treat_devices_added_or_updated')
+            parent.attach_mock(_bind_devices, '_bind_devices')
+            parent.attach_mock(setup_port_filters, 'setup_port_filters')
+            self.assertFalse(self.agent.process_network_ports(port_info,
+                                                              False))
+            expected_calls = [
+                mock.call.treat_devices_added_or_updated(
+                    set(['tap1', 'eth1']), False),
+                mock.call._bind_devices(['tap1']),
+                mock.call.setup_port_filters(set([]), set(['tap1']))]
+            parent.assert_has_calls(expected_calls, any_order=False)
 
     def test_report_state(self):
         with mock.patch.object(self.agent.state_rpc,

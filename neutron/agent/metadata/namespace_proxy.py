@@ -149,20 +149,18 @@ def main():
         cfg.BoolOpt('daemonize',
                     default=True,
                     help=_('Run as daemon.')),
-        cfg.IntOpt('metadata_port',
-                   default=9697,
-                   help=_("TCP Port to listen for metadata server "
-                          "requests.")),
+        cfg.PortOpt('metadata_port',
+                    default=9697,
+                    help=_("TCP Port to listen for metadata server "
+                           "requests.")),
         cfg.StrOpt('metadata_proxy_socket',
                    default='$state_path/metadata_proxy',
                    help=_('Location of Metadata Proxy UNIX domain '
                           'socket')),
         cfg.StrOpt('metadata_proxy_user',
-                   default=None,
                    help=_("User (uid or name) running metadata proxy after "
                           "its initialization")),
         cfg.StrOpt('metadata_proxy_group',
-                   default=None,
                    help=_("Group (gid or name) running metadata proxy after "
                           "its initialization")),
         cfg.BoolOpt('metadata_proxy_watch_log',

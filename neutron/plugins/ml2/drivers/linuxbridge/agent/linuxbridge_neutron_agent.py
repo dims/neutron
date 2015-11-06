@@ -62,10 +62,10 @@ BRIDGE_NAME_PREFIX = "brq"
 # NOTE(toabctl): Don't use /sys/devices/virtual/net here because not all tap
 # devices are listed here (i.e. when using Xen)
 BRIDGE_FS = "/sys/class/net/"
-BRIDGE_NAME_PLACEHOLDER = "bridge_name"
-BRIDGE_INTERFACES_FS = BRIDGE_FS + BRIDGE_NAME_PLACEHOLDER + "/brif/"
-DEVICE_NAME_PLACEHOLDER = "device_name"
-BRIDGE_PORT_FS_FOR_DEVICE = BRIDGE_FS + DEVICE_NAME_PLACEHOLDER + "/brport"
+BRIDGE_INTERFACE_FS = BRIDGE_FS + "%(bridge)s/brif/%(interface)s"
+BRIDGE_INTERFACES_FS = BRIDGE_FS + "%s/brif/"
+BRIDGE_PORT_FS_FOR_DEVICE = BRIDGE_FS + "%s/brport"
+BRIDGE_PATH_FOR_DEVICE = BRIDGE_PORT_FS_FOR_DEVICE + '/bridge'
 VXLAN_INTERFACE_PREFIX = "vxlan-"
 
 
@@ -121,12 +121,10 @@ class LinuxBridgeManager(object):
             sys.exit(1)
         return device
 
-    def interface_exists_on_bridge(self, bridge, interface):
-        directory = '/sys/class/net/%s/brif' % bridge
-        for filename in os.listdir(directory):
-            if filename == interface:
-                return True
-        return False
+    @staticmethod
+    def interface_exists_on_bridge(bridge, interface):
+        return os.path.exists(
+            BRIDGE_INTERFACE_FS % {'bridge': bridge, 'interface': interface})
 
     def get_existing_bridge_name(self, physical_network):
         if not physical_network:
@@ -191,38 +189,35 @@ class LinuxBridgeManager(object):
 
     def get_interfaces_on_bridge(self, bridge_name):
         if ip_lib.device_exists(bridge_name):
-            bridge_interface_path = BRIDGE_INTERFACES_FS.replace(
-                BRIDGE_NAME_PLACEHOLDER, bridge_name)
-            return os.listdir(bridge_interface_path)
+            return os.listdir(BRIDGE_INTERFACES_FS % bridge_name)
         else:
             return []
 
     def get_tap_devices_count(self, bridge_name):
-            bridge_interface_path = BRIDGE_INTERFACES_FS.replace(
-                BRIDGE_NAME_PLACEHOLDER, bridge_name)
-            try:
-                if_list = os.listdir(bridge_interface_path)
-                return len([interface for interface in if_list if
-                            interface.startswith(constants.TAP_DEVICE_PREFIX)])
-            except OSError:
-                return 0
+        try:
+            if_list = os.listdir(BRIDGE_INTERFACES_FS % bridge_name)
+            return len([interface for interface in if_list if
+                        interface.startswith(constants.TAP_DEVICE_PREFIX)])
+        except OSError:
+            return 0
 
     def get_bridge_for_tap_device(self, tap_device_name):
-        bridges = self.get_all_neutron_bridges()
-        for bridge in bridges:
-            interfaces = self.get_interfaces_on_bridge(bridge)
-            if tap_device_name in interfaces:
+        try:
+            path = os.readlink(BRIDGE_PATH_FOR_DEVICE % tap_device_name)
+        except OSError:
+            pass
+        else:
+            bridge = path.rpartition('/')[-1]
+            if (bridge.startswith(BRIDGE_NAME_PREFIX)
+                    or bridge in self.bridge_mappings.values()):
                 return bridge
-
         return None
 
     def is_device_on_bridge(self, device_name):
         if not device_name:
             return False
         else:
-            bridge_port_path = BRIDGE_PORT_FS_FOR_DEVICE.replace(
-                DEVICE_NAME_PLACEHOLDER, device_name)
-            return os.path.exists(bridge_port_path)
+            return os.path.exists(BRIDGE_PORT_FS_FOR_DEVICE % device_name)
 
     def ensure_vlan_bridge(self, network_id, phy_bridge_name,
                            physical_interface, vlan_id):
@@ -668,16 +663,10 @@ class LinuxBridgeManager(object):
         return (agent_ip in entries and mac in entries)
 
     def add_fdb_ip_entry(self, mac, ip, interface):
-        utils.execute(['ip', 'neigh', 'replace', ip, 'lladdr', mac,
-                       'dev', interface, 'nud', 'permanent'],
-                      run_as_root=True,
-                      check_exit_code=False)
+        ip_lib.IPDevice(interface).neigh.add(ip, mac)
 
     def remove_fdb_ip_entry(self, mac, ip, interface):
-        utils.execute(['ip', 'neigh', 'del', ip, 'lladdr', mac,
-                       'dev', interface],
-                      run_as_root=True,
-                      check_exit_code=False)
+        ip_lib.IPDevice(interface).neigh.delete(ip, mac)
 
     def add_fdb_bridge_entry(self, mac, agent_ip, interface, operation="add"):
         utils.execute(['bridge', 'fdb', operation, mac, 'dev', interface,
@@ -971,10 +960,8 @@ class LinuxBridgeNeutronAgentRPC(service.Service):
         try:
             devices_details_list = self.plugin_rpc.get_devices_details_list(
                 self.context, devices, self.agent_id)
-        except Exception as e:
-            LOG.debug("Unable to get port details for "
-                      "%(devices)s: %(e)s",
-                      {'devices': devices, 'e': e})
+        except Exception:
+            LOG.exception(_LE("Unable to get port details for %s"), devices)
             # resync is needed
             return True
 
@@ -1031,9 +1018,9 @@ class LinuxBridgeNeutronAgentRPC(service.Service):
                                                              device,
                                                              self.agent_id,
                                                              cfg.CONF.host)
-            except Exception as e:
-                LOG.debug("port_removed failed for %(device)s: %(e)s",
-                          {'device': device, 'e': e})
+            except Exception:
+                LOG.exception(_LE("Error occurred while removing port %s"),
+                              device)
                 resync = True
             if details and details['exists']:
                 LOG.info(_LI("Port %s updated."), device)
@@ -1046,7 +1033,7 @@ class LinuxBridgeNeutronAgentRPC(service.Service):
     def scan_devices(self, previous, sync):
         device_info = {}
 
-        # Save and reinitialise the set variable that the port_update RPC uses.
+        # Save and reinitialize the set variable that the port_update RPC uses.
         # This should be thread-safe as the greenthread should not yield
         # between these two statements.
         updated_devices = self.updated_devices

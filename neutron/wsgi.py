@@ -28,7 +28,6 @@ from oslo_config import cfg
 import oslo_i18n
 from oslo_log import log as logging
 from oslo_serialization import jsonutils
-from oslo_service import _options
 from oslo_service import service as common_service
 from oslo_service import sslutils
 from oslo_service import systemd
@@ -60,9 +59,7 @@ socket_opts = [
 
 CONF = cfg.CONF
 CONF.register_opts(socket_opts)
-# TODO(eezhova): Replace it with wsgi.register_opts(CONF) when oslo.service
-# 0.10.0 releases.
-CONF.register_opts(_options.wsgi_opts)
+wsgi.register_opts(CONF)
 
 LOG = logging.getLogger(__name__)
 
@@ -745,7 +742,7 @@ class Controller(object):
             raise webob.exc.HTTPNotAcceptable(msg)
 
     def _deserialize(self, data, content_type):
-        """Deserialize the request body to the specefied content type.
+        """Deserialize the request body to the specified content type.
 
         Uses self._serialization_metadata if it exists, which is a dict mapping
         MIME types to information needed to serialize to that type.

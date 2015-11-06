@@ -98,6 +98,12 @@ Document common pitfalls as well as good practices done during database developm
 
      q = query(Object.id, Object.name,
                func.count(Object.number)).group_by(Object.id, Object.name)
+* Beware of the `InvalidRequestError <http://docs.sqlalchemy.org/en/rel_0_8/faq.html#this-session-s-transaction-has-been-rolled-back-due-to-a-previous-exception-during-flush-or-similar>`_ exception.
+  There is even a `Neutron bug <https://bugs.launchpad.net/neutron/+bug/1409774>`_
+  registered for it. Bear in mind that this error may also occur when nesting
+  transaction blocks, and the innermost block raises an error without proper
+  rollback. Consider if `savepoints <http://docs.sqlalchemy.org/en/rel_1_0/orm/session_transaction.html#using-savepoint>`_
+  can fit your use case.
 
 System development
 ~~~~~~~~~~~~~~~~~~
@@ -224,13 +230,20 @@ Scoping your patch appropriately
 * Do not make multiple changes in one patch unless absolutely necessary.
   Cleaning up nearby functions or fixing a small bug you noticed while working
   on something else makes the patch very difficult to review. It also makes
-  cherry-picking and reverting very difficult.
+  cherry-picking and reverting very difficult.  Even apparently minor changes
+  such as reformatting whitespace around your change can burden reviewers and
+  cause merge conflicts.
 * If a fix or feature requires code refactoring, submit the refactoring as a
   separate patch than the one that changes the logic. Otherwise
   it's difficult for a reviewer to tell the difference between mistakes
   in the refactor and changes required for the fix/feature. If it's a bug fix,
   try to implement the fix before the refactor to avoid making cherry-picks to
   stable branches difficult.
+* Consider your reviewers' time before submitting your patch. A patch that
+  requires many hours or days to review will sit in the "todo" list until
+  someone has many hours or days free (which may never happen.) If you can
+  deliver your patch in small but incrementally understandable and testable
+  pieces you will be more likely to attract reviewers.
 
 Nits and pedantic comments
 ~~~~~~~~~~~~~~~~~~~~~~~~~~
@@ -239,8 +252,6 @@ Document common nits and pedantic comments to watch out for.
 
 * Make sure you spell correctly, the best you can, no-one wants rebase generators at
   the end of the release cycle!
-* Being available on IRC is useful, since reviewers can contact directly to quickly
-  clarify a review issue. This speeds up the feeback loop.
 * The odd pep8 error may cause an entire CI run to be wasted. Consider running
   validation (pep8 and/or tests) before submitting your patch. If you keep forgetting
   consider installing a git `hook <https://git-scm.com/book/en/v2/Customizing-Git-Git-Hooks>`_
@@ -273,6 +284,39 @@ Reviewer comments
   trying to help get the patch into a state that can be merged, it doesn't just
   mean they are trying to block it. It's very rare to get a patch merged on the
   first iteration that makes everyone happy.
+
+Code Review
+~~~~~~~~~~~
+
+* You should visit `OpenStack How To Review wiki <https://wiki.openstack.org/wiki/How_To_Contribute#Reviewing>`_
+
+IRC
+~~~~
+
+* IRC is a place where you can speak with many of the Neutron developers and core
+  reviewers. For more information you should visit
+  `OpenStack IRC wiki <http://wiki.openstack.org/wiki/IRC>`_
+  Neutron IRC channel is #openstack-neutron
+* There are weekly IRC meetings related to many different projects/teams
+  in Neutron.
+  A full list of these meetings and their date/time can be found in
+  `OpenStack IRC Meetings <http://eavesdrop.openstack.org>`_.
+  It is important to attend these meetings in the area of your contribution
+  and possibly mention your work and patches.
+* When you have questions regarding an idea or a specific patch of yours, it
+  can be helpful to find a relevant person in IRC and speak with them about
+  it.
+  You can find a user's IRC nickname in their launchpad account.
+* Being available on IRC is useful, since reviewers can contact
+  you directly to quickly clarify a review issue. This speeds
+  up the feedback loop.
+* Each area of Neutron or sub-project of Neutron has a specific lieutenant
+  in charge of it.
+  You can most likely find these lieutenants on IRC, it is advised however to try
+  and send public questions to the channel rather then to a specific person if possible.
+  (This increase the chances of getting faster answers to your questions).
+  A list of the areas and lieutenants nicknames can be found at
+  `Core Reviewers <http://docs.openstack.org/developer/neutron/policies/core-reviewers.html>`_.
 
 Commit messages
 ~~~~~~~~~~~~~~~

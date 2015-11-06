@@ -32,7 +32,8 @@ from neutron.tests import base
 
 LOCAL_IP = '192.168.0.33'
 DEVICE_1 = 'tapabcdef01-12'
-BRIDGE_MAPPINGS = {'physnet0': 'br-eth2'}
+BRIDGE_MAPPING_VALUE = 'br-eth2'
+BRIDGE_MAPPINGS = {'physnet0': BRIDGE_MAPPING_VALUE}
 INTERFACE_MAPPINGS = {'physnet1': 'eth1'}
 FAKE_DEFAULT_DEV = mock.Mock()
 FAKE_DEFAULT_DEV.name = 'eth1'
@@ -166,13 +167,10 @@ class TestLinuxBridgeAgent(base.BaseTestCase):
                 mock.patch.object(agent.sg_agent,
                                   "remove_devices_filter") as fn_rdf:
             fn_udd.side_effect = Exception()
-            with mock.patch.object(linuxbridge_neutron_agent.LOG,
-                                   'debug') as log:
-                resync = agent.treat_devices_removed(devices)
-                self.assertEqual(2, log.call_count)
-                self.assertTrue(resync)
-                self.assertTrue(fn_udd.called)
-                self.assertTrue(fn_rdf.called)
+            resync = agent.treat_devices_removed(devices)
+            self.assertTrue(resync)
+            self.assertTrue(fn_udd.called)
+            self.assertTrue(fn_rdf.called)
 
     def _test_scan_devices(self, previous, updated,
                            fake_current, expected, sync):
@@ -402,8 +400,9 @@ class TestLinuxBridgeManager(base.BaseTestCase):
             exit.assert_called_once_with(1)
 
     def test_interface_exists_on_bridge(self):
-        with mock.patch.object(os, 'listdir') as listdir_fn:
-            listdir_fn.return_value = ["abc"]
+        with mock.patch.object(os.path, 'exists') as exists_fn:
+            exists_fn.side_effect = (
+                lambda p: p == '/sys/class/net/br-int/brif/abc')
             self.assertTrue(
                 self.lbm.interface_exists_on_bridge("br-int", "abc")
             )
@@ -491,14 +490,21 @@ class TestLinuxBridgeManager(base.BaseTestCase):
             self.assertEqual(self.lbm.get_tap_devices_count('br0'), 0)
 
     def test_get_bridge_for_tap_device(self):
-        with mock.patch.object(self.lbm,
-                               "get_all_neutron_bridges") as get_all_qbr_fn,\
-                mock.patch.object(self.lbm,
-                                  "get_interfaces_on_bridge") as get_if_fn:
-            get_all_qbr_fn.return_value = ["br-int", "br-ex"]
-            get_if_fn.return_value = ["tap1", "tap2", "tap3"]
+
+        with mock.patch.object(os, 'readlink') as readlink:
+            readlink.return_value = (
+                'blah/%s-fake' % linuxbridge_neutron_agent.BRIDGE_NAME_PREFIX)
             self.assertEqual(self.lbm.get_bridge_for_tap_device("tap1"),
-                             "br-int")
+                             "brq-fake")
+
+            readlink.return_value = 'blah/%s' % BRIDGE_MAPPING_VALUE
+            self.assertEqual(self.lbm.get_bridge_for_tap_device("tap2"),
+                             BRIDGE_MAPPING_VALUE)
+
+            readlink.return_value = 'blah/notneutronbridge'
+            self.assertIsNone(self.lbm.get_bridge_for_tap_device("tap3"))
+
+            readlink.side_effect = OSError()
             self.assertIsNone(self.lbm.get_bridge_for_tap_device("tap4"))
 
     def test_is_device_on_bridge(self):
@@ -1145,7 +1151,9 @@ class TestLinuxBridgeRpcCallbacks(base.BaseTestCase):
                         'segment_id': 1}}
 
         with mock.patch.object(utils, 'execute',
-                               return_value='') as execute_fn:
+                               return_value='') as execute_fn, \
+                mock.patch.object(ip_lib.IpNeighCommand, 'add',
+                                  return_value='') as add_fn:
             self.lb_rpc.fdb_add(None, fdb_entries)
 
             expected = [
@@ -1156,16 +1164,13 @@ class TestLinuxBridgeRpcCallbacks(base.BaseTestCase):
                            'dev', 'vxlan-1', 'dst', 'agent_ip'],
                           run_as_root=True,
                           check_exit_code=False),
-                mock.call(['ip', 'neigh', 'replace', 'port_ip', 'lladdr',
-                           'port_mac', 'dev', 'vxlan-1', 'nud', 'permanent'],
-                          run_as_root=True,
-                          check_exit_code=False),
                 mock.call(['bridge', 'fdb', 'replace', 'port_mac', 'dev',
                            'vxlan-1', 'dst', 'agent_ip'],
                           run_as_root=True,
                           check_exit_code=False),
             ]
             execute_fn.assert_has_calls(expected)
+            add_fn.assert_called_with('port_ip', 'port_mac')
 
     def test_fdb_ignore(self):
         fdb_entries = {'net_id':
@@ -1205,7 +1210,9 @@ class TestLinuxBridgeRpcCallbacks(base.BaseTestCase):
                         'segment_id': 1}}
 
         with mock.patch.object(utils, 'execute',
-                               return_value='') as execute_fn:
+                               return_value='') as execute_fn, \
+                mock.patch.object(ip_lib.IpNeighCommand, 'delete',
+                                  return_value='') as del_fn:
             self.lb_rpc.fdb_remove(None, fdb_entries)
 
             expected = [
@@ -1214,16 +1221,13 @@ class TestLinuxBridgeRpcCallbacks(base.BaseTestCase):
                            'dev', 'vxlan-1', 'dst', 'agent_ip'],
                           run_as_root=True,
                           check_exit_code=False),
-                mock.call(['ip', 'neigh', 'del', 'port_ip', 'lladdr',
-                           'port_mac', 'dev', 'vxlan-1'],
-                          run_as_root=True,
-                          check_exit_code=False),
                 mock.call(['bridge', 'fdb', 'del', 'port_mac',
                            'dev', 'vxlan-1', 'dst', 'agent_ip'],
                           run_as_root=True,
                           check_exit_code=False),
             ]
             execute_fn.assert_has_calls(expected)
+            del_fn.assert_called_with('port_ip', 'port_mac')
 
     def test_fdb_update_chg_ip(self):
         fdb_entries = {'chg_ip':
@@ -1232,21 +1236,14 @@ class TestLinuxBridgeRpcCallbacks(base.BaseTestCase):
                          {'before': [['port_mac', 'port_ip_1']],
                           'after': [['port_mac', 'port_ip_2']]}}}}
 
-        with mock.patch.object(utils, 'execute',
-                               return_value='') as execute_fn:
+        with mock.patch.object(ip_lib.IpNeighCommand, 'add',
+                               return_value='') as add_fn, \
+                mock.patch.object(ip_lib.IpNeighCommand, 'delete',
+                                  return_value='') as del_fn:
             self.lb_rpc.fdb_update(None, fdb_entries)
 
-            expected = [
-                mock.call(['ip', 'neigh', 'replace', 'port_ip_2', 'lladdr',
-                           'port_mac', 'dev', 'vxlan-1', 'nud', 'permanent'],
-                          run_as_root=True,
-                          check_exit_code=False),
-                mock.call(['ip', 'neigh', 'del', 'port_ip_1', 'lladdr',
-                           'port_mac', 'dev', 'vxlan-1'],
-                          run_as_root=True,
-                          check_exit_code=False)
-            ]
-            execute_fn.assert_has_calls(expected)
+            del_fn.assert_called_with('port_ip_1', 'port_mac')
+            add_fn.assert_called_with('port_ip_2', 'port_mac')
 
     def test_fdb_update_chg_ip_empty_lists(self):
         fdb_entries = {'chg_ip': {'net_id': {'agent_ip': {}}}}

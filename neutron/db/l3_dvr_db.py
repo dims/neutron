@@ -32,7 +32,7 @@ from neutron.db import l3_dvrscheduler_db as l3_dvrsched_db
 from neutron.db import models_v2
 from neutron.extensions import l3
 from neutron.extensions import portbindings
-from neutron.i18n import _LI
+from neutron.i18n import _LI, _LW
 from neutron import manager
 from neutron.plugins.common import constants
 from neutron.plugins.common import utils as p_utils
@@ -161,7 +161,7 @@ class L3_NAT_with_dvr_db_mixin(l3_db.L3_NAT_db_mixin,
               self)._delete_current_gw_port(context, router_id,
                                             router, new_network)
         if (is_distributed_router(router) and
-            gw_ext_net_id != new_network):
+            gw_ext_net_id != new_network and gw_ext_net_id is not None):
             self.delete_csnat_router_interface_ports(
                 context.elevated(), router)
             # NOTE(Swami): Delete the Floatingip agent gateway port
@@ -174,6 +174,10 @@ class L3_NAT_with_dvr_db_mixin(l3_db.L3_NAT_db_mixin,
             if not ext_net_gw_ports:
                 self.delete_floatingip_agent_gateway_port(
                     context.elevated(), None, gw_ext_net_id)
+                # Send the information to all the L3 Agent hosts
+                # to clean up the fip namespace as it is no longer required.
+                self.l3_rpc_notifier.delete_fipnamespace_for_ext_net(
+                    context, gw_ext_net_id)
 
     def _create_gw_port(self, context, router_id, router, new_network,
                         ext_ips):
@@ -660,12 +664,12 @@ class L3_NAT_with_dvr_db_mixin(l3_db.L3_NAT_db_mixin,
 
         # TODO(markmcclain): This is suboptimal but was left to reduce
         # changeset size since it is late in cycle
-        ports = (
+        ports = [
             rp.port.id for rp in
             router.attached_ports.filter_by(
                     port_type=l3_const.DEVICE_OWNER_ROUTER_SNAT)
             if rp.port
-        )
+        ]
 
         c_snat_ports = self._core_plugin.get_ports(
             context,
@@ -692,28 +696,29 @@ class L3_NAT_with_dvr_db_mixin(l3_db.L3_NAT_db_mixin,
 
     def _notify_floating_ip_change(self, context, floating_ip):
         router_id = floating_ip['router_id']
-        if not router_id:
+        fixed_port_id = floating_ip['port_id']
+        # we need to notify agents only in case Floating IP is associated
+        if not router_id or not fixed_port_id:
             return
 
         try:
             router = self._get_router(context, router_id)
         except l3.RouterNotFound:
-            # TODO(changzhi): this is present to avoid grenade failing on a
-            # race condition(<bug:1486828>). Can be removed when underlying
-            # race condition is cleaned up.
-            LOG.debug("Router %(router_id)s not found. "
-                      "Just ingore this router. ",
-                      {"router_id": router_id})
+            # TODO(obondarev): bug 1507602 was filed to investigate race
+            # condition here. For now we preserve original behavior and do
+            # broad notification
+            LOG.warning(_LW("Router %s was not found. "
+                            "Doing broad notification."),
+                        router_id)
+            self.notify_router_updated(context, router_id)
             return
-        # we need to notify agents only in case Floating IP is associated
-        fixed_port_id = floating_ip['port_id']
-        if fixed_port_id:
-            if is_distributed_router(router):
-                host = self._get_vm_port_hostid(context, fixed_port_id)
-                self.l3_rpc_notifier.routers_updated_on_host(
-                    context, [router_id], host)
-            else:
-                self.notify_router_updated(context, router_id)
+
+        if is_distributed_router(router):
+            host = self._get_vm_port_hostid(context, fixed_port_id)
+            self.l3_rpc_notifier.routers_updated_on_host(
+                context, [router_id], host)
+        else:
+            self.notify_router_updated(context, router_id)
 
     def update_floatingip(self, context, id, floatingip):
         old_floatingip, floatingip = self._update_floatingip(
@@ -723,6 +728,10 @@ class L3_NAT_with_dvr_db_mixin(l3_db.L3_NAT_db_mixin,
                 floatingip['port_id'] != old_floatingip['port_id']):
             self._notify_floating_ip_change(context, floatingip)
         return floatingip
+
+    def delete_floatingip(self, context, id):
+        floating_ip = self._delete_floatingip(context, id)
+        self._notify_floating_ip_change(context, floating_ip)
 
 
 def is_distributed_router(router):

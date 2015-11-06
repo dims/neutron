@@ -41,10 +41,10 @@ OPTS = [
                help=_("Name of bridge used for external network "
                       "traffic. This option is deprecated and will be removed "
                       "in the M release.")),
-    cfg.IntOpt('metadata_port',
-               default=9697,
-               help=_("TCP Port used by Neutron metadata namespace "
-                      "proxy.")),
+    cfg.PortOpt('metadata_port',
+                default=9697,
+                help=_("TCP Port used by Neutron metadata namespace "
+                       "proxy.")),
     cfg.IntOpt('send_arp_for_ha',
                default=3,
                help=_("Send this many gratuitous ARPs for HA setup, if "
@@ -85,11 +85,6 @@ OPTS = [
                       'source.')),
     cfg.BoolOpt('enable_metadata_proxy', default=True,
                 help=_("Allow running metadata proxy.")),
-    cfg.BoolOpt('router_delete_namespaces', default=True,
-                help=_("Delete namespace after removing a router."
-                       "This option is deprecated and "
-                       "will be removed in a future release."),
-                deprecated_for_removal=True),
     cfg.StrOpt('metadata_access_mark',
                default='0x1',
                help=_('Iptables mangle mark used to mark metadata valid '
