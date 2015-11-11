@@ -25,3 +25,5 @@ redis>=2.10.0
 pyzmq>=14.3.1 # LGPL+BSD
 pylint==1.4.4 # GNU GPL v2
 reno>=0.1.1 # Apache2
+# Needed to run DB commands in virtualenvs
+PyMySQL>=0.6.2 # MIT License
