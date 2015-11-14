@@ -72,16 +72,17 @@ core_opts = [
                help=_("Maximum number of fixed ips per port. This option "
                       "is deprecated and will be removed in the N "
                       "release.")),
-    cfg.StrOpt('default_ipv4_subnet_pool',
+    cfg.StrOpt('default_ipv4_subnet_pool', deprecated_for_removal=True,
                help=_("Default IPv4 subnet-pool to be used for automatic "
-                      "subnet CIDR allocation")),
-    cfg.StrOpt('default_ipv6_subnet_pool',
+                      "subnet CIDR allocation. This option is deprecated for "
+                      "removal in the N release.")),
+    cfg.StrOpt('default_ipv6_subnet_pool', deprecated_for_removal=True,
                help=_("Default IPv6 subnet-pool to be used for automatic "
-                      "subnet CIDR allocation")),
-    cfg.IntOpt('dhcp_lease_duration', default=86400,
-               deprecated_name='dhcp_lease_time',
-               help=_("DHCP lease duration (in seconds). Use -1 to tell "
-                      "dnsmasq to use infinite lease times.")),
+                      "subnet CIDR allocation. This option is deprecated for "
+                      "removal in the N release.")),
+    cfg.BoolOpt('ipv6_pd_enabled', default=False,
+                help=_("Enables IPv6 Prefix Delegation for automatic subnet "
+                       "CIDR allocation")),
     cfg.StrOpt('dns_domain',
                default='openstacklocal',
                help=_('Domain to use for building the hostnames')),
@@ -98,9 +99,7 @@ core_opts = [
     cfg.BoolOpt('force_gateway_on_subnet', default=True,
                 help=_("Ensure that configured gateway is on subnet. "
                        "For IPv6, validate only if gateway is not a link "
-                       "local address. Deprecated, to be removed during the "
-                       "K release, at which point the check will be "
-                       "mandatory.")),
+                       "local address.")),
     cfg.BoolOpt('notify_nova_on_port_status_changes', default=True,
                 help=_("Send notification to nova when port status changes")),
     cfg.BoolOpt('notify_nova_on_port_data_changes', default=True,

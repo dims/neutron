@@ -1,5 +1,4 @@
-# Copyright 2012 Big Switch Networks, Inc.
-# All Rights Reserved.
+# Copyright 2015 Cisco Systems
 #
 #    Licensed under the Apache License, Version 2.0 (the "License"); you may
 #    not use this file except in compliance with the License. You may obtain
@@ -12,13 +11,26 @@
 #    WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied. See the
 #    License for the specific language governing permissions and limitations
 #    under the License.
+#
+
+"""add is_default to subnetpool
+
+Revision ID: 13cfb89f881a
+Revises: 59cb5b6cf4d
+Create Date: 2015-09-30 15:58:31.170153
 
 """
-Neutron REST Proxy Plug-in for Big Switch and FloodLight Controllers.
 
-See http://github.com/openstack/networking-bigswitch for more information
-"""
-from bsnstacklib.plugins.bigswitch import plugin
+# revision identifiers, used by Alembic.
+revision = '13cfb89f881a'
+down_revision = '59cb5b6cf4d'
+
+from alembic import op
+import sqlalchemy as sa
 
 
-NeutronRestProxyV2 = plugin.NeutronRestProxyV2
+def upgrade():
+    op.add_column('subnetpools',
+                  sa.Column('is_default',
+                            sa.Boolean(),
+                            nullable=False))
