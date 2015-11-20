@@ -125,9 +125,11 @@ repo but are summarized here to describe the functionality they provide.
 +-------------------------------+-----------------------+
 | networking-hyperv_            |          ml2          |
 +-------------------------------+-----------------------+
+| networking-infoblox_          |         ipam          |
++-------------------------------+-----------------------+
 | networking-l2gw_              |         l2            |
 +-------------------------------+-----------------------+
-| networking-midonet_           |        core,lb        |
+| networking-midonet_           |  core,ml2,l3,lb,fw    |
 +-------------------------------+-----------------------+
 | networking-mlnx_              |          ml2          |
 +-------------------------------+-----------------------+
@@ -147,7 +149,7 @@ repo but are summarized here to describe the functionality they provide.
 +-------------------------------+-----------------------+
 | networking-plumgrid_          |          core         |
 +-------------------------------+-----------------------+
-| neutron-powervm_              |          ml2          |
+| networking-powervm_           |          ml2          |
 +-------------------------------+-----------------------+
 | networking-sfc_               |  service composition  |
 +-------------------------------+-----------------------+
@@ -170,6 +172,7 @@ Functionality legend
 - lb: a Load Balancer service plugin;
 - intent: a service plugin that provides a declarative API to realize networking;
 - docker: a Docker network plugin that uses Neutron to provide networking services to Docker containers;
+- ipam: an IP address management driver;
 
 .. _networking-ale-omniswitch:
 
@@ -275,6 +278,15 @@ Hyper-V
 * Launchpad: https://launchpad.net/networking-hyperv
 * PyPI: https://pypi.python.org/pypi/networking-hyperv
 
+.. _networking-infoblox:
+
+Infoblox
+++++++++
+
+* Git: https://git.openstack.org/cgit/openstack/networking-infoblox
+* Launchpad: https://launchpad.net/networking-infoblox
+* PyPI: https://pypi.python.org/pypi/networking-infoblox
+
 .. _kuryr:
 
 Kuryr
@@ -377,14 +389,14 @@ PLUMgrid
 * Launchpad: https://launchpad.net/networking-plumgrid
 * PyPI: https://pypi.python.org/pypi/networking-plumgrid
 
-.. _neutron-powervm:
+.. _networking-powervm:
 
 PowerVM
 +++++++
 
 * Git: https://git.openstack.org/cgit/openstack/networking-powervm
-* Launchpad: https://launchpad.net/neutron-powervm
-* PyPI: https://pypi.python.org/pypi/neutron-powervm
+* Launchpad: https://launchpad.net/networking-powervm
+* PyPI: https://pypi.python.org/pypi/networking-powervm
 
 .. _networking-sfc:
 

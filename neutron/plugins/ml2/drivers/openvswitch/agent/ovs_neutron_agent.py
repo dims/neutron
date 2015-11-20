@@ -182,6 +182,7 @@ class OVSNeutronAgent(sg_rpc.SecurityGroupAgentRpcCallbackMixin,
         super(OVSNeutronAgent, self).__init__()
         self.conf = conf or cfg.CONF
 
+        self.fullsync = True
         # init bridge classes with configured datapath type.
         self.br_int_cls, self.br_phys_cls, self.br_tun_cls = (
             functools.partial(bridge_classes[b],
@@ -192,7 +193,6 @@ class OVSNeutronAgent(sg_rpc.SecurityGroupAgentRpcCallbackMixin,
         self.veth_mtu = veth_mtu
         self.available_local_vlans = set(moves.range(p_const.MIN_VLAN_TAG,
                                                      p_const.MAX_VLAN_TAG))
-        self.use_call = True
         self.tunnel_types = tunnel_types or []
         self.l2_pop = l2_population
         # TODO(ethuleau): Change ARP responder so it's not dependent on the
@@ -329,9 +329,13 @@ class OVSNeutronAgent(sg_rpc.SecurityGroupAgentRpcCallbackMixin,
             self.dvr_agent.in_distributed_mode())
 
         try:
-            self.state_rpc.report_state(self.context,
-                                        self.agent_state,
-                                        self.use_call)
+            agent_status = self.state_rpc.report_state(self.context,
+                                                       self.agent_state,
+                                                       True)
+            if agent_status == n_const.AGENT_REVIVED:
+                LOG.info(_LI('Agent has just been revived. '
+                             'Doing a full sync.'))
+                self.fullsync = True
             self.use_call = False
             self.agent_state.pop('start_flag', None)
         except Exception:
@@ -876,7 +880,8 @@ class OVSNeutronAgent(sg_rpc.SecurityGroupAgentRpcCallbackMixin,
             LOG.info(_LI("Skipping ARP spoofing rules for port '%s' because "
                          "it has port security disabled"), vif.port_name)
             return
-        if port_details['device_owner'].startswith('network:'):
+        if port_details['device_owner'].startswith(
+            n_const.DEVICE_OWNER_NETWORK_PREFIX):
             LOG.debug("Skipping ARP spoofing rules for network owned port "
                       "'%s'.", vif.port_name)
             return
@@ -1659,7 +1664,6 @@ class OVSNeutronAgent(sg_rpc.SecurityGroupAgentRpcCallbackMixin,
         if not polling_manager:
             polling_manager = polling.get_polling_manager(
                 minimize_polling=False)
-
         sync = True
         ports = set()
         updated_ports_copy = set()
@@ -1669,6 +1673,10 @@ class OVSNeutronAgent(sg_rpc.SecurityGroupAgentRpcCallbackMixin,
         consecutive_resyncs = 0
         need_clean_stale_flow = True
         while self._check_and_handle_signal():
+            if self.fullsync:
+                LOG.info(_LI("rpc_loop doing a full sync."))
+                sync = True
+                self.fullsync = False
             port_info = {}
             ancillary_port_info = {}
             start = time.time()

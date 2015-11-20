@@ -362,6 +362,13 @@ class TestLinuxBridgeAgent(base.BaseTestCase):
             self.agent.stop()
             self.assertFalse(mock_set_rpc.called)
 
+    def test_report_state_revived(self):
+        with mock.patch.object(self.agent.state_rpc,
+                               "report_state") as report_st:
+            report_st.return_value = constants.AGENT_REVIVED
+            self.agent._report_state()
+            self.assertTrue(self.agent.fullsync)
+
 
 class TestLinuxBridgeManager(base.BaseTestCase):
     def setUp(self):
@@ -450,24 +457,6 @@ class TestLinuxBridgeManager(base.BaseTestCase):
                 bridge_lib.BridgeDevice, 'get_interfaces') as get_ifs_fn:
             get_ifs_fn.return_value = ['tap2101', 'eth0.100', 'vxlan-1000']
             self.assertEqual(self.lbm.get_tap_devices_count('br0'), 1)
-
-    def test_get_bridge_for_tap_device(self):
-
-        with mock.patch.object(
-                bridge_lib.BridgeDevice, 'get_interface_bridge') as get_br:
-            get_br.return_value = bridge_lib.BridgeDevice("brq-fake")
-            self.assertEqual(get_br.return_value,
-                             self.lbm.get_bridge_for_tap_device("tap1"))
-
-            get_br.return_value = bridge_lib.BridgeDevice(BRIDGE_MAPPING_VALUE)
-            self.assertEqual(get_br.return_value,
-                             self.lbm.get_bridge_for_tap_device("tap2"))
-
-            get_br.return_value = bridge_lib.BridgeDevice('notneutronbridge')
-            self.assertIsNone(self.lbm.get_bridge_for_tap_device("tap3"))
-
-            get_br.return_value = None
-            self.assertIsNone(self.lbm.get_bridge_for_tap_device("tap4"))
 
     def test_get_interface_details(self):
         with mock.patch.object(ip_lib.IpAddrCommand, 'list') as list_fn,\
@@ -645,12 +634,13 @@ class TestLinuxBridgeManager(base.BaseTestCase):
                 mock.patch.object(self.lbm,
                                   'update_interface_ip_details') as upd_fn,\
                 mock.patch.object(bridge_lib, 'is_bridged_interface'),\
-                mock.patch.object(self.lbm,
-                                  'get_bridge_for_tap_device') as get_if_br_fn:
+                mock.patch.object(bridge_lib.BridgeDevice,
+                                  'get_interface_bridge') as get_if_br_fn:
             de_fn.return_value = False
             br_fn.addbr.return_value = bridge_device
             bridge_device.setfd.return_value = False
             bridge_device.disable_stp.return_value = False
+            bridge_device.disable_ipv6.return_value = False
             bridge_device.link.set_up.return_value = False
             self.assertEqual(self.lbm.ensure_bridge("br0", None), "br0")
 
@@ -721,8 +711,8 @@ class TestLinuxBridgeManager(base.BaseTestCase):
             with mock.patch.object(self.lbm, "ensure_local_bridge") as en_fn,\
                     mock.patch.object(bridge_lib, "BridgeDevice",
                                       return_value=bridge_device), \
-                    mock.patch.object(self.lbm,
-                                      "get_bridge_for_tap_device") as get_br:
+                    mock.patch.object(bridge_lib.BridgeDevice,
+                                      "get_interface_bridge") as get_br:
                 bridge_device.addif.retun_value = False
                 get_br.return_value = True
                 self.assertTrue(self.lbm.add_tap_interface("123",
@@ -749,8 +739,8 @@ class TestLinuxBridgeManager(base.BaseTestCase):
                                    "ensure_physical_in_bridge") as ens_fn,\
                     mock.patch.object(self.lbm,
                                       "ensure_tap_mtu") as en_mtu_fn,\
-                    mock.patch.object(self.lbm,
-                                      "get_bridge_for_tap_device") as get_br:
+                    mock.patch.object(bridge_lib.BridgeDevice,
+                                      "get_interface_bridge") as get_br:
                 ens_fn.return_value = False
                 self.assertFalse(self.lbm.add_tap_interface("123",
                                                             p_const.TYPE_VLAN,

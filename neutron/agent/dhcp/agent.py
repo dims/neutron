@@ -58,9 +58,7 @@ class DhcpAgent(manager.Manager):
         self.cache = NetworkCache()
         self.dhcp_driver_cls = importutils.import_class(self.conf.dhcp_driver)
         ctx = context.get_admin_context_without_session()
-        self.plugin_rpc = DhcpPluginApi(topics.PLUGIN,
-                                        ctx, self.conf.use_namespaces,
-                                        self.conf.host)
+        self.plugin_rpc = DhcpPluginApi(topics.PLUGIN, ctx, self.conf.host)
         # create dhcp dir to store dhcp info
         dhcp_dir = os.path.dirname("/%s/dhcp/" % self.conf.state_path)
         utils.ensure_dir(dhcp_dir)
@@ -80,10 +78,7 @@ class DhcpAgent(manager.Manager):
                 self.conf
             )
             for net_id in existing_networks:
-                net = dhcp.NetModel(self.conf.use_namespaces,
-                                    {"id": net_id,
-                                     "subnets": [],
-                                     "ports": []})
+                net = dhcp.NetModel({"id": net_id, "subnets": [], "ports": []})
                 self.cache.put(net)
         except NotImplementedError:
             # just go ahead with an empty networks cache
@@ -250,8 +245,7 @@ class DhcpAgent(manager.Manager):
         """Disable DHCP for a network known to the agent."""
         network = self.cache.get_network_by_id(network_id)
         if network:
-            if (self.conf.use_namespaces and
-                self.conf.enable_isolated_metadata):
+            if self.conf.enable_isolated_metadata:
                 # NOTE(jschwarz): In the case where a network is deleted, all
                 # the subnets and ports are deleted before this function is
                 # called, so checking if 'should_enable_metadata' is True
@@ -406,10 +400,9 @@ class DhcpPluginApi(object):
 
     """
 
-    def __init__(self, topic, context, use_namespaces, host):
+    def __init__(self, topic, context, host):
         self.context = context
         self.host = host
-        self.use_namespaces = use_namespaces
         target = oslo_messaging.Target(
                 topic=topic,
                 namespace=constants.RPC_NAMESPACE_DHCP_PLUGIN,
@@ -421,7 +414,7 @@ class DhcpPluginApi(object):
         cctxt = self.client.prepare(version='1.1')
         networks = cctxt.call(self.context, 'get_active_networks_info',
                               host=self.host)
-        return [dhcp.NetModel(self.use_namespaces, n) for n in networks]
+        return [dhcp.NetModel(n) for n in networks]
 
     def get_network_info(self, network_id):
         """Make a remote process call to retrieve network info."""
@@ -429,7 +422,7 @@ class DhcpPluginApi(object):
         network = cctxt.call(self.context, 'get_network_info',
                              network_id=network_id, host=self.host)
         if network:
-            return dhcp.NetModel(self.use_namespaces, network)
+            return dhcp.NetModel(network)
 
     def create_dhcp_port(self, port):
         """Make a remote process call to create the dhcp port."""
@@ -547,13 +540,11 @@ class DhcpAgentWithStateReport(DhcpAgent):
             'topic': topics.DHCP_AGENT,
             'configurations': {
                 'dhcp_driver': self.conf.dhcp_driver,
-                'use_namespaces': self.conf.use_namespaces,
                 'dhcp_lease_duration': self.conf.dhcp_lease_duration,
                 'log_agent_heartbeats': self.conf.AGENT.log_agent_heartbeats},
             'start_flag': True,
             'agent_type': constants.AGENT_TYPE_DHCP}
         report_interval = self.conf.AGENT.report_interval
-        self.use_call = True
         if report_interval:
             self.heartbeat = loopingcall.FixedIntervalLoopingCall(
                 self._report_state)
@@ -564,8 +555,12 @@ class DhcpAgentWithStateReport(DhcpAgent):
             self.agent_state.get('configurations').update(
                 self.cache.get_state())
             ctx = context.get_admin_context_without_session()
-            self.state_rpc.report_state(ctx, self.agent_state, self.use_call)
-            self.use_call = False
+            agent_status = self.state_rpc.report_state(
+                ctx, self.agent_state, True)
+            if agent_status == constants.AGENT_REVIVED:
+                LOG.info(_LI("Agent has just been revived. "
+                             "Scheduling full sync"))
+                self.schedule_resync("Agent has just been revived")
         except AttributeError:
             # This means the server does not support report_state
             LOG.warn(_LW("Neutron server does not support state report."

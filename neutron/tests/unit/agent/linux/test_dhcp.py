@@ -72,7 +72,7 @@ class Dictable(object):
 class FakeDhcpPort(object):
     id = 'aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaa'
     admin_state_up = True
-    device_owner = 'network:dhcp'
+    device_owner = constants.DEVICE_OWNER_DHCP
     fixed_ips = [FakeIPAllocation('192.168.0.1',
                                   'dddddddd-dddd-dddd-dddd-dddddddddddd')]
     mac_address = '00:00:80:aa:bb:ee'
@@ -84,7 +84,7 @@ class FakeDhcpPort(object):
 
 class FakeReservedPort(object):
     admin_state_up = True
-    device_owner = 'network:dhcp'
+    device_owner = constants.DEVICE_OWNER_DHCP
     fixed_ips = [FakeIPAllocation('192.168.0.6',
                                   'dddddddd-dddd-dddd-dddd-dddddddddddd')]
     mac_address = '00:00:80:aa:bb:ee'
@@ -798,7 +798,6 @@ class TestConfBase(base.BaseTestCase):
         self.conf.register_opts(dhcp_config.DNSMASQ_OPTS)
         self.conf.register_opts(external_process.OPTS)
         config.register_interface_driver_opts_helper(self.conf)
-        config.register_use_namespaces_opts_helper(self.conf)
 
 
 class TestBase(TestConfBase):
@@ -815,7 +814,7 @@ class TestBase(TestConfBase):
         self.config_parse(self.conf)
         self.conf.set_override('state_path', '')
 
-        self.replace_p = mock.patch('neutron.agent.linux.utils.replace_file')
+        self.replace_p = mock.patch('neutron.common.utils.replace_file')
         self.execute_p = mock.patch('neutron.agent.common.utils.execute')
         self.safe = self.replace_p.start()
         self.execute = self.execute_p.start()
@@ -974,7 +973,7 @@ class TestDhcpLocalProcess(TestBase):
         self.assertEqual(lp.interface_name, 'tap0')
 
     def test_set_interface_name(self):
-        with mock.patch('neutron.agent.linux.utils.replace_file') as replace:
+        with mock.patch('neutron.common.utils.replace_file') as replace:
             lp = LocalChild(self.conf, FakeDualNetwork())
             with mock.patch.object(lp, 'get_conf_file_name') as conf_file:
                 conf_file.return_value = '/interface'
@@ -1889,11 +1888,6 @@ class TestDnsmasq(TestBase):
         self.safe.assert_has_calls([mock.call(exp_host_name, exp_host_data),
                                     mock.call(exp_opt_name, exp_opt_data)])
 
-    def test_should_enable_metadata_namespaces_disabled_returns_false(self):
-        self.conf.set_override('use_namespaces', False)
-        self.assertFalse(dhcp.Dnsmasq.should_enable_metadata(self.conf,
-                                                             mock.ANY))
-
     def test_should_enable_metadata_isolated_network_returns_true(self):
         self.assertTrue(dhcp.Dnsmasq.should_enable_metadata(
             self.conf, FakeV4NetworkNoRouter()))
@@ -1949,22 +1943,14 @@ class TestDnsmasq(TestBase):
 
 
 class TestDeviceManager(TestConfBase):
-
-    @mock.patch('neutron.agent.linux.dhcp.ip_lib')
-    @mock.patch('neutron.agent.linux.dhcp.common_utils.load_interface_driver')
-    def test_setup(self, load_interface_driver, ip_lib):
-        """Test new and existing cases of DeviceManager's DHCP port setup
-        logic.
-        """
-        self._test_setup(load_interface_driver, ip_lib, False)
-
-    @mock.patch('neutron.agent.linux.dhcp.ip_lib')
-    @mock.patch('neutron.agent.linux.dhcp.common_utils.load_interface_driver')
-    def test_setup_gateway_ips(self, load_interface_driver, ip_lib):
-        """Test new and existing cases of DeviceManager's DHCP port setup
-        logic.
-        """
-        self._test_setup(load_interface_driver, ip_lib, True)
+    def setUp(self):
+        super(TestDeviceManager, self).setUp()
+        ip_lib_patcher = mock.patch('neutron.agent.linux.dhcp.ip_lib')
+        load_interface_driver_patcher = mock.patch(
+            'neutron.agent.linux.dhcp.agent_common_utils.'
+            'load_interface_driver')
+        self.mock_ip_lib = ip_lib_patcher.start()
+        self.mock_load_interface_driver = load_interface_driver_patcher.start()
 
     def _test_setup(self, load_interface_driver, ip_lib, use_gateway_ips):
         # Create DeviceManager.
@@ -2028,9 +2014,15 @@ class TestDeviceManager(TestConfBase):
                                          'unique-IP-address/64']))
         self.assertFalse(plugin.create_dhcp_port.called)
 
-    @mock.patch('neutron.agent.linux.dhcp.ip_lib')
-    @mock.patch('neutron.agent.linux.dhcp.common_utils.load_interface_driver')
-    def test_setup_reserved(self, load_interface_driver, ip_lib):
+    def test_setup_device_manager_dhcp_port_without_gateway_ips(self):
+        self._test_setup(self.mock_load_interface_driver,
+                         self.mock_ip_lib, use_gateway_ips=False)
+
+    def test_setup_device_manager_dhcp_port_with_gateway_ips(self):
+        self._test_setup(self.mock_load_interface_driver,
+                         self.mock_ip_lib, use_gateway_ips=True)
+
+    def test_setup_reserved(self):
         """Test reserved port case of DeviceManager's DHCP port setup
         logic.
         """
@@ -2040,7 +2032,7 @@ class TestDeviceManager(TestConfBase):
                                            default=False))
         plugin = mock.Mock()
         mgr = dhcp.DeviceManager(self.conf, plugin)
-        load_interface_driver.assert_called_with(self.conf)
+        self.mock_load_interface_driver.assert_called_with(self.conf)
 
         # Setup with a reserved DHCP port.
         network = FakeDualNetworkReserved()
@@ -2056,7 +2048,7 @@ class TestDeviceManager(TestConfBase):
         plugin.update_dhcp_port.side_effect = mock_update
         mgr.driver.get_device_name.return_value = 'ns-XXX'
         mgr.driver.use_gateway_ips = False
-        ip_lib.ensure_device_is_ready.return_value = True
+        self.mock_ip_lib.ensure_device_is_ready.return_value = True
         mgr.setup(network)
         plugin.update_dhcp_port.assert_called_with(reserved_port.id, mock.ANY)
 
@@ -2064,9 +2056,7 @@ class TestDeviceManager(TestConfBase):
                                               ['192.168.0.6/24'],
                                               namespace='qdhcp-ns')
 
-    @mock.patch('neutron.agent.linux.dhcp.ip_lib')
-    @mock.patch('neutron.agent.linux.dhcp.common_utils.load_interface_driver')
-    def test_setup_reserved_2(self, load_interface_driver, ip_lib):
+    def test_setup_reserved_2(self):
         """Test scenario where a network has two reserved ports, and
         update_dhcp_port fails for the first of those.
         """
@@ -2076,7 +2066,7 @@ class TestDeviceManager(TestConfBase):
                                            default=False))
         plugin = mock.Mock()
         mgr = dhcp.DeviceManager(self.conf, plugin)
-        load_interface_driver.assert_called_with(self.conf)
+        self.mock_load_interface_driver.assert_called_with(self.conf)
 
         # Setup with a reserved DHCP port.
         network = FakeDualNetworkReserved2()
@@ -2096,7 +2086,7 @@ class TestDeviceManager(TestConfBase):
         plugin.update_dhcp_port.side_effect = mock_update
         mgr.driver.get_device_name.return_value = 'ns-XXX'
         mgr.driver.use_gateway_ips = False
-        ip_lib.ensure_device_is_ready.return_value = True
+        self.mock_ip_lib.ensure_device_is_ready.return_value = True
         mgr.setup(network)
         plugin.update_dhcp_port.assert_called_with(reserved_port_2.id,
                                                    mock.ANY)
