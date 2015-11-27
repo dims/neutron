@@ -978,17 +978,6 @@ class TestOvsNeutronAgent(object):
             self.assertEqual(self.agent.phys_ofports["physnet1"],
                              "phy_ofport")
 
-    def test_get_peer_name(self):
-        bridge1 = "A_REALLY_LONG_BRIDGE_NAME1"
-        bridge2 = "A_REALLY_LONG_BRIDGE_NAME2"
-        self.agent.use_veth_interconnection = True
-        self.assertEqual(len(self.agent.get_peer_name('int-', bridge1)),
-                         n_const.DEVICE_NAME_MAX_LEN)
-        self.assertEqual(len(self.agent.get_peer_name('int-', bridge2)),
-                         n_const.DEVICE_NAME_MAX_LEN)
-        self.assertNotEqual(self.agent.get_peer_name('int-', bridge1),
-                            self.agent.get_peer_name('int-', bridge2))
-
     def test_setup_tunnel_br(self):
         self.tun_br = mock.Mock()
         with mock.patch.object(self.agent.int_br,
@@ -1498,7 +1487,7 @@ class TestOvsNeutronAgent(object):
         self.agent.setup_arp_spoofing_protection(int_br, vif, fake_details)
         self.assertEqual(
             [mock.call(port=vif.ofport)],
-            int_br.delete_arp_spoofing_protection.mock_calls)
+            int_br.delete_arp_spoofing_allow_rules.mock_calls)
         self.assertEqual(
             [mock.call(ip_addresses=set(), port=vif.ofport)],
             int_br.install_arp_spoofing_protection.mock_calls)
@@ -1512,7 +1501,7 @@ class TestOvsNeutronAgent(object):
         self.agent.setup_arp_spoofing_protection(br, vif, fake_details)
         self.assertEqual(
             [mock.call(port=vif.ofport)],
-            br.delete_arp_spoofing_protection.mock_calls)
+            br.delete_arp_spoofing_allow_rules.mock_calls)
         self.assertTrue(br.install_icmpv6_na_spoofing_protection.called)
 
     def test_arp_spoofing_fixed_and_allowed_addresses(self):

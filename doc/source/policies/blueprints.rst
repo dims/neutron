@@ -134,7 +134,7 @@ The workflow for the life an RFE in Launchpad is as follows:
   * Escalate issues, and raise warnings to the release team/PTL if the
     effort shows slow progress. Approver and assignee are key parts to land
     a blueprint: should the approver and/or assignee be unable to continue
-    the committment during the release cycle, it is the Approver's
+    the commitment during the release cycle, it is the Approver's
     responsibility to reach out the release team/PTL so that replacements
     can be identified.
   * Provide a status update during the Neutron IRC meeting, if required.
@@ -150,12 +150,15 @@ The workflow for the life an RFE in Launchpad is as follows:
   the work planned. Blueprints for which resources cannot be identified
   will have to be deferred.
 
-* In either case (a spec being required or not), once discussion has happened
-  the bug will get an assignee, priority and milestone.
-* At this point, the RFE is 'approved', and its tag will move from 'rfe' to
-  'rfe-approved'. From now on, the bug becomes just a regular bug report and
-  it will follow the usual 'In Progress', 'Fix Committed', 'Fix Released'
-  transition when code gets posted/merged/released, respectively.
+* In either case (a spec being required or not), once the discussion has
+  happened and there is positive consensus on the RFE, the report is 'approved',
+  and its tag will move from 'rfe' to 'rfe-approved'.
+* At this point, the RFE needs resources, and if none are identified for
+  some time the report will be marked incomplete.
+* As for setting the milestone (both for RFE bugs or blueprints), the current
+  milestone is always chosen, assuming that work will start as soon as the feature
+  is approved. Work that fails to complete by the defined milestone will roll
+  over automatically until it gets completed or abandoned.
 * If the code fails to merge, the bug report may be marked as incomplete,
   unassigned and untargeted, and it will be garbage collected by
   the Launchpad Janitor if no-one takes over in time. Renewed interest in the
@@ -167,6 +170,8 @@ In summary:
 |State       | Meaning                                                                     |
 +============+=============================================================================+
 |New         | This is where all RFE's start, as filed by the community.                   |
++------------+-----------------------------------------------------------------------------+
+|Incomplete  | Drivers/LTs - Move to this state to mean, "more needed before proceeding"   |
 +------------+-----------------------------------------------------------------------------+
 |Confirmed   | Drivers/LTs - Move to this state to mean, "yeah, I see that you filed it"   |
 +------------+-----------------------------------------------------------------------------+
@@ -184,6 +189,7 @@ not followed up by a blueprint standout in the Launchpad `milestone dashboards <
 The drivers team will be discussing the following bug reports during their IRC meeting:
 
 * `New RFE's <https://bugs.launchpad.net/neutron/+bugs?field.status%3Alist=NEW&field.tag=rfe>`_
+* `Incomplete RFE's <https://bugs.launchpad.net/neutron/+bugs?field.status%3Alist=INCOMPLETE&field.tag=rfe>`_
 * `Confirmed RFE's <https://bugs.launchpad.net/neutron/+bugs?field.status%3Alist=CONFIRMED&field.tag=rfe>`_
 * `Triaged RFE's <https://bugs.launchpad.net/neutron/+bugs?field.status%3Alist=TRIAGED&field.tag=rfe>`_
 
