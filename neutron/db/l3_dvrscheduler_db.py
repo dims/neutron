@@ -146,7 +146,7 @@ class L3_DVRsch_db_mixin(l3agent_sch_db.L3AgentSchedulerDbMixin):
                 int_subnet = int_ips[0]['subnet_id']
                 subnet_ids.add(int_subnet)
             else:
-                LOG.debug('DVR: Could not find a subnet id'
+                LOG.debug('DVR: Could not find a subnet id '
                           'for router %s', router_id)
         return subnet_ids
 
@@ -389,12 +389,14 @@ class L3_DVRsch_db_mixin(l3agent_sch_db.L3AgentSchedulerDbMixin):
                 context, router_id, chosen_agent)
             return chosen_agent
 
-    def _unbind_router(self, context, router_id, agent_id):
+    def _unschedule_router(self, context, router_id, agents_ids):
         router = self.get_router(context, router_id)
-        super(L3_DVRsch_db_mixin, self)._unbind_router(context, router_id,
-                                                       agent_id)
         if router.get('distributed', False):
-            self.unbind_snat(context, router_id, agent_id)
+            # for DVR router unscheduling means just unscheduling SNAT portion
+            self.unbind_snat_servicenode(context, router_id)
+        else:
+            super(L3_DVRsch_db_mixin, self)._unschedule_router(
+                context, router_id, agents_ids)
 
     def _get_active_l3_agent_routers_sync_data(self, context, host, agent,
                                                router_ids):
