@@ -22,6 +22,7 @@ from sqlalchemy.orm import exc
 from oslo_utils import excutils
 import six
 
+from neutron._i18n import _LI
 from neutron.api.rpc.agentnotifiers import l3_rpc_agent_api
 from neutron.api.v2 import attributes
 from neutron.callbacks import events
@@ -37,7 +38,6 @@ from neutron.db import model_base
 from neutron.db import models_v2
 from neutron.extensions import external_net
 from neutron.extensions import l3
-from neutron.i18n import _LI
 from neutron import manager
 from neutron.plugins.common import constants
 from neutron.plugins.common import utils as p_utils
@@ -1219,7 +1219,7 @@ class L3_NAT_dbonly_mixin(l3.RouterPluginBase):
             return {}
 
         filters = {'network_id': [id for id in network_ids]}
-        fields = ['id', 'cidr', 'gateway_ip',
+        fields = ['id', 'cidr', 'gateway_ip', 'dns_nameservers',
                   'network_id', 'ipv6_ra_mode', 'subnetpool_id']
 
         subnets_by_network = dict((id, []) for id in network_ids)
@@ -1250,6 +1250,7 @@ class L3_NAT_dbonly_mixin(l3.RouterPluginBase):
                 subnet_info = {'id': subnet['id'],
                                'cidr': subnet['cidr'],
                                'gateway_ip': subnet['gateway_ip'],
+                               'dns_nameservers': subnet['dns_nameservers'],
                                'ipv6_ra_mode': subnet['ipv6_ra_mode'],
                                'subnetpool_id': subnet['subnetpool_id']}
                 for fixed_ip in port['fixed_ips']:
