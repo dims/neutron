@@ -24,6 +24,7 @@ from oslo_db.sqlalchemy import test_migrations
 import sqlalchemy
 from sqlalchemy import event
 
+from neutron.api.v2 import attributes as attr
 import neutron.db.migration as migration_help
 from neutron.db.migration.alembic_migrations import external
 from neutron.db.migration import cli as migration
@@ -131,7 +132,7 @@ class _TestModelsMigrations(test_migrations.ModelsMigrationsSync):
             object_, name, type_, reflected, compare_to)
 
     def filter_metadata_diff(self, diff):
-        return filter(self.remove_unrelated_errors, diff)
+        return list(filter(self.remove_unrelated_errors, diff))
 
     # Remove some difference that are not mistakes just specific of
     # dialects, etc
@@ -283,8 +284,9 @@ class TestSanityCheck(test_base.DbTestCase):
             'securitygroups', sqlalchemy.MetaData(),
             sqlalchemy.Column('id', sqlalchemy.String(length=36),
                               nullable=False),
-            sqlalchemy.Column('name', sqlalchemy.String(255)),
-            sqlalchemy.Column('tenant_id', sqlalchemy.String(255)))
+            sqlalchemy.Column('name', sqlalchemy.String(attr.NAME_MAX_LEN)),
+            sqlalchemy.Column('tenant_id',
+                              sqlalchemy.String(attr.TENANT_ID_MAX_LEN)))
 
         with self.engine.connect() as conn:
             SecurityGroup.create(conn)
