@@ -442,9 +442,8 @@ class LinuxBridgeManager(object):
                     'device_owner': device_owner,
                     'bridge_name': bridge_name}
             LOG.debug("Skip adding device %(tap_device_name)s to "
-                      "%(bridge_name)s. It is owned by %(device_owner) and "
-                      "thus added elsewhere."
-                      "elsewhere", data)
+                      "%(bridge_name)s. It is owned by %(device_owner)s and "
+                      "thus added elsewhere.", data)
         return True
 
     def ensure_tap_mtu(self, tap_dev_name, phy_dev_name):
@@ -495,18 +494,6 @@ class LinuxBridgeManager(object):
         else:
             LOG.debug("Cannot delete bridge %s; it does not exist",
                       bridge_name)
-
-    def remove_empty_bridges(self):
-        for network_id in list(self.network_map.keys()):
-            # NOTE(nick-ma-z): Don't remove pre-existing user-defined bridges
-            phy_net = self.network_map[network_id].physical_network
-            if phy_net and phy_net in self.bridge_mappings:
-                continue
-
-            bridge_name = self.get_bridge_name(network_id)
-            if not self.get_tap_devices_count(bridge_name):
-                self.delete_bridge(bridge_name)
-                del self.network_map[network_id]
 
     def remove_interface(self, bridge_name, interface_name):
         bridge_device = bridge_lib.BridgeDevice(bridge_name)

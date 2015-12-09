@@ -19,15 +19,14 @@ Routines for configuring Neutron
 
 import sys
 
-from keystoneclient import auth
-from keystoneclient import session as ks_session
+from keystoneauth1 import loading as ks_loading
 from oslo_config import cfg
 from oslo_db import options as db_options
 from oslo_log import log as logging
 import oslo_messaging
 from oslo_service import wsgi
 
-from neutron._i18n import _LI
+from neutron._i18n import _, _LI
 from neutron.api.v2 import attributes
 from neutron.common import utils
 from neutron import policy
@@ -198,8 +197,8 @@ set_db_defaults()
 
 NOVA_CONF_SECTION = 'nova'
 
-ks_session.Session.register_conf_options(cfg.CONF, NOVA_CONF_SECTION)
-auth.register_conf_options(cfg.CONF, NOVA_CONF_SECTION)
+ks_loading.register_auth_conf_options(cfg.CONF, NOVA_CONF_SECTION)
+ks_loading.register_session_conf_options(cfg.CONF, NOVA_CONF_SECTION)
 
 nova_opts = [
     cfg.StrOpt('region_name',

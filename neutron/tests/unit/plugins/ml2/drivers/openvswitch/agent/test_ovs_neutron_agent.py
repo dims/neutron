@@ -21,6 +21,7 @@ from oslo_log import log
 import oslo_messaging
 import testtools
 
+from neutron._i18n import _
 from neutron.agent.common import ovs_lib
 from neutron.agent.common import utils
 from neutron.agent.linux import async_process
@@ -302,7 +303,7 @@ class TestOvsNeutronAgent(object):
         with mock.patch.object(self.agent, 'int_br') as int_br:
             int_br.db_get_val.return_value = cur_tag
             self.agent.port_dead(port)
-        if cur_tag == self.mod_agent.DEAD_VLAN_TAG:
+        if cur_tag is None or cur_tag == self.mod_agent.DEAD_VLAN_TAG:
             self.assertFalse(int_br.set_db_attribute.called)
             self.assertFalse(int_br.drop_port.called)
         else:
@@ -318,6 +319,9 @@ class TestOvsNeutronAgent(object):
 
     def test_port_dead_with_port_already_dead(self):
         self._test_port_dead(self.mod_agent.DEAD_VLAN_TAG)
+
+    def test_port_dead_with_valid_tag(self):
+        self._test_port_dead(cur_tag=1)
 
     def mock_scan_ports(self, vif_port_set=None, registered_ports=None,
                         updated_ports=None, port_tags_dict=None, sync=False):
