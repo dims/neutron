@@ -12,7 +12,6 @@
 #    License for the specific language governing permissions and limitations
 #    under the License.
 
-from oslo_log import log as logging
 from oslo_utils import uuidutils
 import sqlalchemy as sa
 from sqlalchemy.orm import exc
@@ -22,8 +21,6 @@ from neutron.api.v2 import attributes as attr
 from neutron.db import model_base
 from neutron.db import models_v2
 from neutron.extensions import address_scope as ext_address_scope
-
-LOG = logging.getLogger(__name__)
 
 
 class AddressScope(model_base.BASEV2, models_v2.HasId, models_v2.HasTenant):
@@ -75,7 +72,7 @@ class AddressScopeDbMixin(ext_address_scope.AddressScopePluginBase):
         return address_scope.ip_version
 
     def create_address_scope(self, context, address_scope):
-        """Create a address scope."""
+        """Create an address scope."""
         a_s = address_scope['address_scope']
         tenant_id = self._get_tenant_id_for_create(context, a_s)
         address_scope_id = a_s.get('id') or uuidutils.generate_uuid()

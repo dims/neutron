@@ -33,7 +33,6 @@ from neutron.agent.common import ovs_lib
 from neutron.agent.common import polling
 from neutron.agent.common import utils
 from neutron.agent.l2.extensions import manager as ext_manager
-from neutron.agent.linux import async_process
 from neutron.agent.linux import ip_lib
 from neutron.agent.linux import polling as linux_polling
 from neutron.agent import rpc as agent_rpc
@@ -319,7 +318,6 @@ class OVSNeutronAgent(sg_rpc.SecurityGroupAgentRpcCallbackMixin,
                 LOG.info(_LI('Agent has just been revived. '
                              'Doing a full sync.'))
                 self.fullsync = True
-            self.use_call = False
             self.agent_state.pop('start_flag', None)
         except Exception:
             LOG.exception(_LE("Failed reporting state!"))
@@ -758,7 +756,7 @@ class OVSNeutronAgent(sg_rpc.SecurityGroupAgentRpcCallbackMixin,
         '''Bind port to net_uuid/lsw_id and install flow for inbound traffic
         to vm.
 
-        :param port: a ovs_lib.VifPort object.
+        :param port: an ovs_lib.VifPort object.
         :param net_uuid: the net_uuid this port is to be associated with.
         :param network_type: the network type ('gre', 'vlan', 'flat', 'local')
         :param physical_network: the physical network for 'vlan' or 'flat'
@@ -934,7 +932,7 @@ class OVSNeutronAgent(sg_rpc.SecurityGroupAgentRpcCallbackMixin,
     def port_dead(self, port, log_errors=True):
         '''Once a port has no binding, put it on the "dead vlan".
 
-        :param port: a ovs_lib.VifPort object.
+        :param port: an ovs_lib.VifPort object.
         '''
         # Don't kill a port if it's already dead
         cur_tag = self.int_br.db_get_val("Port", port.port_name, "tag",
@@ -1063,7 +1061,7 @@ class OVSNeutronAgent(sg_rpc.SecurityGroupAgentRpcCallbackMixin,
             br.setup_default_table()
             self.phys_brs[physical_network] = br
 
-            # interconnect physical and integration bridges using veth/patchs
+            # interconnect physical and integration bridges using veth/patches
             int_if_name = p_utils.get_interface_name(
                 bridge, prefix=constants.PEER_INTEGRATION_PREFIX)
             phys_if_name = p_utils.get_interface_name(
@@ -1812,12 +1810,7 @@ class OVSNeutronAgent(sg_rpc.SecurityGroupAgentRpcCallbackMixin,
                 # no action and by InterfacePollingMinimizer as start/stop
                 if isinstance(
                     polling_manager, linux_polling.InterfacePollingMinimizer):
-                    # There's a possible race here, when ovsdb-server is
-                    # restarted ovsdb monitor will also be restarted
-                    try:
-                        polling_manager.stop()
-                    except async_process.AsyncProcessException:
-                        LOG.debug("OVSDB monitor was not running")
+                    polling_manager.stop()
                     polling_manager.start()
             elif ovs_status == constants.OVS_DEAD:
                 # Agent doesn't apply any operations when ovs is dead, to

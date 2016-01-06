@@ -82,6 +82,7 @@ class L3PluginApi(object):
         1.6 - Added process_prefix_update
         1.7 - DVR support: new L3 plugin methods added.
               - delete_agent_gateway_port
+        1.8 - Added address scope information
     """
 
     def __init__(self, topic, host):
@@ -441,6 +442,7 @@ class L3NATAgent(firewall_l3_agent.FWaaSL3AgentRpcCallback,
                        priority=queue.PRIORITY_SYNC_ROUTERS_TASK):
         router_update.timestamp = timeutils.utcnow()
         router_update.priority = priority
+        router_update.router = None  # Force the agent to resync the router
         self._queue.add(router_update)
 
     def _process_router_update(self):

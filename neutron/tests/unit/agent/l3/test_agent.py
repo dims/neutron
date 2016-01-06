@@ -22,6 +22,7 @@ import mock
 import netaddr
 from oslo_log import log
 import oslo_messaging
+from oslo_utils import timeutils
 from oslo_utils import uuidutils
 import six
 from testtools import matchers
@@ -36,6 +37,7 @@ from neutron.agent.l3 import legacy_router
 from neutron.agent.l3 import link_local_allocator as lla
 from neutron.agent.l3 import namespaces
 from neutron.agent.l3 import router_info as l3router
+from neutron.agent.l3 import router_processing_queue
 from neutron.agent.linux import dibbler
 from neutron.agent.linux import external_process
 from neutron.agent.linux import interface
@@ -46,6 +48,7 @@ from neutron.agent import rpc as agent_rpc
 from neutron.common import config as base_config
 from neutron.common import constants as l3_constants
 from neutron.common import exceptions as n_exc
+from neutron.extensions import portbindings
 from neutron.plugins.common import constants as p_const
 from neutron.tests import base
 from neutron.tests.common import l3_test_common
@@ -352,7 +355,7 @@ class TestBasicRouterOperations(BasicRouterOperationsFramework):
                       'subnets': [{'gateway_ip': '20.0.0.1'}],
                       'extra_subnets': [{'cidr': '172.16.0.0/24'}],
                       'id': _uuid(),
-                      'binding:host_id': HOSTNAME,
+                      portbindings.HOST_ID: HOSTNAME,
                       'network_id': _uuid(),
                       'mac_address': 'ca:fe:de:ad:be:ef'}
         ri.snat_ports = sn_port
@@ -1817,6 +1820,29 @@ class TestBasicRouterOperations(BasicRouterOperationsFramework):
         self.plugin_api.get_routers.side_effect = (
             oslo_messaging.MessagingTimeout)
         self._test_process_routers_update_rpc_timeout()
+
+    def test_process_routers_update_resyncs_failed_router(self):
+        agent = l3_agent.L3NATAgent(HOSTNAME, self.conf)
+
+        # Attempting to configure the router will fail
+        agent._process_router_if_compatible = mock.MagicMock()
+        agent._process_router_if_compatible.side_effect = RuntimeError()
+
+        # Queue an update from a full sync
+        update = router_processing_queue.RouterUpdate(
+            42,
+            router_processing_queue.PRIORITY_SYNC_ROUTERS_TASK,
+            router=mock.Mock(),
+            timestamp=timeutils.utcnow())
+        agent._queue.add(update)
+        agent._process_router_update()
+
+        # The update contained the router object, get_routers won't be called
+        self.assertFalse(agent.plugin_rpc.get_routers.called)
+
+        # The update failed, assert that get_routers was called
+        agent._process_router_update()
+        self.assertTrue(agent.plugin_rpc.get_routers.called)
 
     def test_process_routers_update_rpc_timeout_on_get_ext_net(self):
         self._test_process_routers_update_rpc_timeout(ext_net_call=True,

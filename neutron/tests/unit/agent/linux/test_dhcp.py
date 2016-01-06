@@ -18,7 +18,6 @@ import os
 import mock
 import netaddr
 from oslo_config import cfg
-from oslo_log import log as logging
 
 from neutron.agent.common import config
 from neutron.agent.dhcp import config as dhcp_config
@@ -30,8 +29,6 @@ from neutron.common import utils
 from neutron.extensions import extra_dhcp_opt as edo_ext
 from neutron.tests import base
 from neutron.tests import tools
-
-LOG = logging.getLogger(__name__)
 
 
 class FakeIPAllocation(object):
@@ -1003,7 +1000,6 @@ class TestDnsmasq(TestBase):
         expected = [
             'dnsmasq',
             '--no-hosts',
-            '--no-resolv',
             '--strict-order',
             '--except-interface=lo',
             '--pid-file=%s' % expected_pid_file,
@@ -1131,6 +1127,12 @@ class TestDnsmasq(TestBase):
                           '--log-dhcp',
                           ('--log-facility=%s' % dhcp_dns_log)],
                          network)
+
+    def test_spawn_cfg_no_local_resolv(self):
+        self.conf.set_override('dnsmasq_local_resolv', False)
+
+        self._test_spawn(['--conf-file=', '--no-resolv',
+                          '--domain=openstacklocal'])
 
     def test_spawn_max_leases_is_smaller_than_cap(self):
         self._test_spawn(

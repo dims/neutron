@@ -32,10 +32,12 @@ from neutron.common import constants
 from neutron.common import exceptions as exc
 from neutron.common import utils
 from neutron import context
+from neutron.db import agents_db
 from neutron.db import api as db_api
 from neutron.db import db_base_plugin_v2 as base_plugin
 from neutron.db import l3_db
 from neutron.db import models_v2
+from neutron.extensions import availability_zone as az_ext
 from neutron.extensions import external_net
 from neutron.extensions import multiprovidernet as mpnet
 from neutron.extensions import portbindings
@@ -393,6 +395,21 @@ class TestMl2NetworksWithVlanTransparencyAndMTU(TestMl2NetworksV2):
         self.assertIn('vlan_transparent', network)
 
 
+class TestMl2NetworksWithAvailabilityZone(TestMl2NetworksV2):
+    def test_create_network_availability_zone(self):
+        az_hints = ['az1', 'az2']
+        data = {'network': {'name': 'net1',
+                            az_ext.AZ_HINTS: az_hints,
+                            'tenant_id': 'tenant_one'}}
+        with mock.patch.object(agents_db.AgentAvailabilityZoneMixin,
+                               'validate_availability_zones'):
+            network_req = self.new_create_request('networks', data)
+            res = network_req.get_response(self.api)
+            self.assertEqual(201, res.status_int)
+            network = self.deserialize(self.fmt, res)['network']
+            self.assertEqual(az_hints, network[az_ext.AZ_HINTS])
+
+
 class TestMl2SubnetsV2(test_plugin.TestSubnetsV2,
                        Ml2PluginV2TestCase):
     def test_delete_subnet_race_with_dhcp_port_creation(self):
@@ -434,6 +451,41 @@ class TestMl2SubnetsV2(test_plugin.TestSubnetsV2,
                     req = self.new_delete_request('subnets', subnet_id)
                     res = req.get_response(self.api)
                     self.assertEqual(204, res.status_int)
+
+
+class TestMl2DbOperationBounds(test_plugin.DbOperationBoundMixin,
+                               Ml2PluginV2TestCase):
+    """Test cases to assert constant query count for list operations.
+
+    These test cases assert that an increase in the number of objects
+    does not result in an increase of the number of db operations. All
+    database lookups during a list operation should be performed in bulk
+    so the number of queries required for 2 objects instead of 1 should
+    stay the same.
+    """
+
+    def make_network(self):
+        return self._make_network(self.fmt, 'name', True)
+
+    def make_subnet(self):
+        net = self.make_network()
+        setattr(self, '_subnet_count', getattr(self, '_subnet_count', 0) + 1)
+        cidr = '1.%s.0.0/24' % self._subnet_count
+        return self._make_subnet(self.fmt, net, None, cidr)
+
+    def make_port(self):
+        net = self.make_network()
+        return self._make_port(self.fmt, net['network']['id'])
+
+    def test_network_list_queries_constant(self):
+        self._assert_object_list_queries_constant(self.make_network,
+                                                  'networks')
+
+    def test_subnet_list_queries_constant(self):
+        self._assert_object_list_queries_constant(self.make_subnet, 'subnets')
+
+    def test_port_list_queries_constant(self):
+        self._assert_object_list_queries_constant(self.make_port, 'ports')
 
 
 class TestMl2PortsV2(test_plugin.TestPortsV2, Ml2PluginV2TestCase):
@@ -995,7 +1047,7 @@ class TestMl2PortBinding(Ml2PluginV2TestCase,
         plugin = manager.NeutronManager.get_plugin()
         port = {
             'id': 'foo_port_id',
-            'binding:host_id': 'foo_host',
+            portbindings.HOST_ID: 'foo_host',
         }
         with mock.patch.object(ml2_db, 'ensure_dvr_port_binding') as mock_dvr:
             plugin.update_dvr_port_binding(
