@@ -6,4 +6,4 @@ env:
 install:
   - travis_retry pip install tox
 script:
-  - tox
+  - travis_retry travis_wait 2 tox -- --concurrency=5
