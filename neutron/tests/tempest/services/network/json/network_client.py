@@ -44,8 +44,8 @@ class NetworkClientJSON(service_client.ServiceClient):
 
         # The following list represents resource names that do not require
         # changing underscore to a hyphen
-        hyphen_exceptions = ["health_monitors", "firewall_rules",
-                             "firewall_policies", "service_profiles"]
+        hyphen_exceptions = [
+            "firewall_rules", "firewall_policies", "service_profiles"]
         # the following map is used to construct proper URI
         # for the given neutron resource
         service_resource_prefix_map = {
@@ -53,10 +53,6 @@ class NetworkClientJSON(service_client.ServiceClient):
             'subnets': '',
             'subnetpools': '',
             'ports': '',
-            'pools': 'lb',
-            'vips': 'lb',
-            'health_monitors': 'lb',
-            'members': 'lb',
             'ipsecpolicies': 'vpn',
             'vpnservices': 'vpn',
             'ikepolicies': 'vpn',
@@ -174,46 +170,6 @@ class NetworkClientJSON(service_client.ServiceClient):
             if name[:prefix_len] == prefix:
                 return method_functors[index](name[prefix_len:])
         raise AttributeError(name)
-
-    # Subnetpool methods
-    def create_subnetpool(self, post_data):
-        body = self.serialize_list(post_data, "subnetpools", "subnetpool")
-        uri = self.get_uri("subnetpools")
-        resp, body = self.post(uri, body)
-        body = {'subnetpool': self.deserialize_list(body)}
-        self.expected_success(201, resp.status)
-        return service_client.ResponseBody(resp, body)
-
-    def get_subnetpool(self, id):
-        uri = self.get_uri("subnetpools")
-        subnetpool_uri = '%s/%s' % (uri, id)
-        resp, body = self.get(subnetpool_uri)
-        body = {'subnetpool': self.deserialize_list(body)}
-        self.expected_success(200, resp.status)
-        return service_client.ResponseBody(resp, body)
-
-    def delete_subnetpool(self, id):
-        uri = self.get_uri("subnetpools")
-        subnetpool_uri = '%s/%s' % (uri, id)
-        resp, body = self.delete(subnetpool_uri)
-        self.expected_success(204, resp.status)
-        return service_client.ResponseBody(resp, body)
-
-    def list_subnetpools(self):
-        uri = self.get_uri("subnetpools")
-        resp, body = self.get(uri)
-        body = {'subnetpools': self.deserialize_list(body)}
-        self.expected_success(200, resp.status)
-        return service_client.ResponseBody(resp, body)
-
-    def update_subnetpool(self, id, post_data):
-        body = self.serialize_list(post_data, "subnetpools", "subnetpool")
-        uri = self.get_uri("subnetpools")
-        subnetpool_uri = '%s/%s' % (uri, id)
-        resp, body = self.put(subnetpool_uri, body)
-        body = {'subnetpool': self.deserialize_list(body)}
-        self.expected_success(200, resp.status)
-        return service_client.ResponseBody(resp, body)
 
     # Common methods that are hard to automate
     def create_bulk_network(self, names, shared=False):
@@ -432,29 +388,6 @@ class NetworkClientJSON(service_client.ServiceClient):
         body = json.loads(body)
         return service_client.ResponseBody(resp, body)
 
-    def associate_health_monitor_with_pool(self, health_monitor_id,
-                                           pool_id):
-        post_body = {
-            "health_monitor": {
-                "id": health_monitor_id,
-            }
-        }
-        body = json.dumps(post_body)
-        uri = '%s/lb/pools/%s/health_monitors' % (self.uri_prefix,
-                                                  pool_id)
-        resp, body = self.post(uri, body)
-        self.expected_success(201, resp.status)
-        body = json.loads(body)
-        return service_client.ResponseBody(resp, body)
-
-    def disassociate_health_monitor_with_pool(self, health_monitor_id,
-                                              pool_id):
-        uri = '%s/lb/pools/%s/health_monitors/%s' % (self.uri_prefix, pool_id,
-                                                     health_monitor_id)
-        resp, body = self.delete(uri)
-        self.expected_success(204, resp.status)
-        return service_client.ResponseBody(resp, body)
-
     def list_router_interfaces(self, uuid):
         uri = '%s/ports?device_id=%s' % (self.uri_prefix, uuid)
         resp, body = self.get(uri)
@@ -471,21 +404,6 @@ class NetworkClientJSON(service_client.ServiceClient):
         agent = {"agent": agent_info}
         body = json.dumps(agent)
         resp, body = self.put(uri, body)
-        self.expected_success(200, resp.status)
-        body = json.loads(body)
-        return service_client.ResponseBody(resp, body)
-
-    def list_pools_hosted_by_one_lbaas_agent(self, agent_id):
-        uri = '%s/agents/%s/loadbalancer-pools' % (self.uri_prefix, agent_id)
-        resp, body = self.get(uri)
-        self.expected_success(200, resp.status)
-        body = json.loads(body)
-        return service_client.ResponseBody(resp, body)
-
-    def show_lbaas_agent_hosting_pool(self, pool_id):
-        uri = ('%s/lb/pools/%s/loadbalancer-agent' %
-               (self.uri_prefix, pool_id))
-        resp, body = self.get(uri)
         self.expected_success(200, resp.status)
         body = json.loads(body)
         return service_client.ResponseBody(resp, body)
@@ -580,13 +498,6 @@ class NetworkClientJSON(service_client.ServiceClient):
         }
         body = json.dumps(put_body)
         resp, body = self.put(uri, body)
-        self.expected_success(200, resp.status)
-        body = json.loads(body)
-        return service_client.ResponseBody(resp, body)
-
-    def list_lb_pool_stats(self, pool_id):
-        uri = '%s/lb/pools/%s/stats' % (self.uri_prefix, pool_id)
-        resp, body = self.get(uri)
         self.expected_success(200, resp.status)
         body = json.loads(body)
         return service_client.ResponseBody(resp, body)
