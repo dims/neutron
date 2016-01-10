@@ -35,6 +35,7 @@ from neutron.common import exceptions as n_exc
 from neutron.common import ipv6_utils
 from neutron.common import rpc as n_rpc
 from neutron.common import utils
+from neutron.db import l3_agentschedulers_db as l3_agt
 from neutron.db import model_base
 from neutron.db import models_v2
 from neutron.extensions import external_net
@@ -80,7 +81,7 @@ class RouterPort(model_base.BASEV2):
 
 
 class Router(model_base.HasStandardAttributes, model_base.BASEV2,
-             models_v2.HasId, models_v2.HasTenant):
+             model_base.HasId, model_base.HasTenant):
     """Represents a v2 neutron router."""
 
     name = sa.Column(sa.String(attributes.NAME_MAX_LEN))
@@ -92,12 +93,13 @@ class Router(model_base.HasStandardAttributes, model_base.BASEV2,
         RouterPort,
         backref='router',
         lazy='dynamic')
-    l3_agents = orm.relationship('Agent', lazy='joined', viewonly=True,
-                                 secondary='routerl3agentbindings')
+    l3_agents = orm.relationship(
+        'Agent', lazy='joined', viewonly=True,
+        secondary=l3_agt.RouterL3AgentBinding.__table__)
 
 
 class FloatingIP(model_base.HasStandardAttributes, model_base.BASEV2,
-                 models_v2.HasId, models_v2.HasTenant):
+                 model_base.HasId, model_base.HasTenant):
     """Represents a floating IP address.
 
     This IP address may or may not be allocated to a tenant, and may or
