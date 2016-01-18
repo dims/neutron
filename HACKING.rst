@@ -19,6 +19,9 @@ Neutron Specific Commandments
 - [N327] Python 3: do not use dict.iteritems.
 - [N328] Detect wrong usage with assertEqual
 - [N329] Method's default argument shouldn't be mutable
+- [N330] Use assertEqual(*empty*, observed) instead of
+         assertEqual(observed, *empty*)
+- [N331] Detect wrong usage with assertTrue(isinstance()).
 
 Creating Unit Tests
 -------------------

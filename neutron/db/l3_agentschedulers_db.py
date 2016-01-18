@@ -159,33 +159,24 @@ class L3AgentSchedulerDbMixin(l3agentscheduler.L3AgentSchedulerPluginBase,
         """Validate if the router can be correctly assigned to the agent.
 
         :raises: RouterL3AgentMismatch if attempting to assign DVR router
-          to legacy agent, or centralized router to compute's L3 agents.
+          to legacy agent.
         :raises: InvalidL3Agent if attempting to assign router to an
           unsuitable agent (disabled, type != L3, incompatible configuration)
-        :raises: DVRL3CannotAssignToDvrAgent if attempting to assign DVR
-          router from one DVR Agent to another.
+        :raises: DVRL3CannotAssignToDvrAgent if attempting to assign a
+          router to an agent in 'dvr' mode.
         """
         if agent['agent_type'] != constants.AGENT_TYPE_L3:
             raise l3agentscheduler.InvalidL3Agent(id=agent['id'])
 
-        is_distributed = router.get('distributed')
         agent_mode = self._get_agent_mode(agent)
-        router_type = (
-            'distributed' if is_distributed else
-            'centralized')
 
-        is_agent_router_types_incompatible = (
-            agent_mode == constants.L3_AGENT_MODE_DVR and not is_distributed
-            or agent_mode == constants.L3_AGENT_MODE_LEGACY and is_distributed
-        )
-        if is_agent_router_types_incompatible:
+        if agent_mode == constants.L3_AGENT_MODE_DVR:
+            raise l3agentscheduler.DVRL3CannotAssignToDvrAgent()
+
+        if (agent_mode == constants.L3_AGENT_MODE_LEGACY and
+            router.get('distributed')):
             raise l3agentscheduler.RouterL3AgentMismatch(
-                router_type=router_type, router_id=router['id'],
-                agent_mode=agent_mode, agent_id=agent['id'])
-        if agent_mode == constants.L3_AGENT_MODE_DVR and is_distributed:
-            raise l3agentscheduler.DVRL3CannotAssignToDvrAgent(
-                router_type=router_type, router_id=router['id'],
-                agent_id=agent['id'])
+                router_id=router['id'], agent_id=agent['id'])
 
         is_suitable_agent = (
             agentschedulers_db.services_available(agent['admin_state_up']) and
@@ -364,14 +355,13 @@ class L3AgentSchedulerDbMixin(l3agentscheduler.L3AgentSchedulerPluginBase,
                                                router_ids):
         if n_utils.is_extension_supported(self,
                                           constants.L3_HA_MODE_EXT_ALIAS):
-            return self.get_ha_sync_data_for_host(context, host,
+            return self.get_ha_sync_data_for_host(context, host, agent,
                                                   router_ids=router_ids,
                                                   active=True)
 
         return self.get_sync_data(context, router_ids=router_ids, active=True)
 
-    def list_active_sync_routers_on_active_l3_agent(
-            self, context, host, router_ids):
+    def list_router_ids_on_host(self, context, host, router_ids=None):
         agent = self._get_agent_by_type_and_host(
             context, constants.AGENT_TYPE_L3, host)
         if not agentschedulers_db.services_available(agent.admin_state_up):
@@ -383,8 +373,15 @@ class L3AgentSchedulerDbMixin(l3agentscheduler.L3AgentSchedulerPluginBase,
         if router_ids:
             query = query.filter(
                 RouterL3AgentBinding.router_id.in_(router_ids))
-        router_ids = [item[0] for item in query]
+
+        return [item[0] for item in query]
+
+    def list_active_sync_routers_on_active_l3_agent(
+            self, context, host, router_ids):
+        router_ids = self.list_router_ids_on_host(context, host, router_ids)
         if router_ids:
+            agent = self._get_agent_by_type_and_host(
+                context, constants.AGENT_TYPE_L3, host)
             return self._get_active_l3_agent_routers_sync_data(context, host,
                                                                agent,
                                                                router_ids)
@@ -554,6 +551,13 @@ class L3AgentSchedulerDbMixin(l3agentscheduler.L3AgentSchedulerPluginBase,
                 RouterL3AgentBinding.l3_agent_id).order_by('count')
         res = query.filter(agents_db.Agent.id.in_(agent_ids)).first()
         return res[0]
+
+    def get_hosts_to_notify(self, context, router_id):
+        """Returns all hosts to send notification about router update"""
+        state = agentschedulers_db.get_admin_state_up_filter()
+        agents = self.get_l3_agents_hosting_routers(
+            context, [router_id], admin_state_up=state, active=True)
+        return [a.host for a in agents]
 
 
 class AZL3AgentSchedulerDbMixin(L3AgentSchedulerDbMixin,

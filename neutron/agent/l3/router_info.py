@@ -76,7 +76,8 @@ class RouterInfo(object):
         self.radvd = ra.DaemonMonitor(self.router_id,
                                       self.ns_name,
                                       process_monitor,
-                                      self.get_internal_device_name)
+                                      self.get_internal_device_name,
+                                      self.agent_conf)
 
         self.router_namespace.create()
 
@@ -107,15 +108,10 @@ class RouterInfo(object):
         ip_wrapper = ip_lib.IPWrapper(namespace=namespace)
         ip_wrapper.netns.execute(cmd, check_exit_code=False)
 
-    def update_routing_table(self, operation, route, namespace=None):
-        if namespace is None:
-            namespace = self.ns_name
-        self._update_routing_table(operation, route, namespace)
+    def update_routing_table(self, operation, route):
+        self._update_routing_table(operation, route, self.ns_name)
 
-    def routes_updated(self):
-        new_routes = self.router['routes']
-
-        old_routes = self.routes
+    def routes_updated(self, old_routes, new_routes):
         adds, removes = common_utils.diff_list_of_dict(old_routes,
                                                        new_routes)
         for route in adds:
@@ -129,7 +125,6 @@ class RouterInfo(object):
         for route in removes:
             LOG.debug("Removed route entry is '%s'", route)
             self.update_routing_table('delete', route)
-        self.routes = new_routes
 
     def get_ex_gw_port(self):
         return self.router.get('gw_port')
@@ -261,7 +256,7 @@ class RouterInfo(object):
         self.router['gw_port'] = None
         self.router[l3_constants.INTERFACE_KEY] = []
         self.router[l3_constants.FLOATINGIP_KEY] = []
-        self.process(agent, delete=True)
+        self.process_delete(agent)
         self.disable_radvd()
         self.router_namespace.delete()
 
@@ -652,35 +647,50 @@ class RouterInfo(object):
                              self.iptables_manager,
                              interface_name)
 
-    def process_external(self, agent, delete=False):
+    def _process_external_on_delete(self, agent):
         fip_statuses = {}
-        if not delete:
-            try:
-                with self.iptables_manager.defer_apply():
-                    ex_gw_port = self.get_ex_gw_port()
-                    self._process_external_gateway(ex_gw_port, agent.pd)
-                    if not ex_gw_port:
-                        return
-
-                    # Process SNAT/DNAT rules and addresses for floating IPs
-                    self.process_snat_dnat_for_fip()
-
-                # Once NAT rules for floating IPs are safely in place
-                # configure their addresses on the external gateway port
-                interface_name = self.get_external_device_interface_name(
-                    ex_gw_port)
-                fip_statuses = self.configure_fip_addresses(interface_name)
-
-            except (n_exc.FloatingIpSetupException,
-                    n_exc.IpTablesApplyException):
-                    # All floating IPs must be put in error state
-                    LOG.exception(_LE("Failed to process floating IPs."))
-                    fip_statuses = self.put_fips_in_error_state()
-            finally:
-                self.update_fip_statuses(agent, fip_statuses)
-        else:
+        try:
             ex_gw_port = self.get_ex_gw_port()
             self._process_external_gateway(ex_gw_port, agent.pd)
+            if not ex_gw_port:
+                return
+
+            interface_name = self.get_external_device_interface_name(
+                ex_gw_port)
+            fip_statuses = self.configure_fip_addresses(interface_name)
+
+        except (n_exc.FloatingIpSetupException):
+                # All floating IPs must be put in error state
+                LOG.exception(_LE("Failed to process floating IPs."))
+                fip_statuses = self.put_fips_in_error_state()
+        finally:
+            self.update_fip_statuses(agent, fip_statuses)
+
+    def process_external(self, agent):
+        fip_statuses = {}
+        try:
+            with self.iptables_manager.defer_apply():
+                ex_gw_port = self.get_ex_gw_port()
+                self._process_external_gateway(ex_gw_port, agent.pd)
+                if not ex_gw_port:
+                    return
+
+                # Process SNAT/DNAT rules and addresses for floating IPs
+                self.process_snat_dnat_for_fip()
+
+            # Once NAT rules for floating IPs are safely in place
+            # configure their addresses on the external gateway port
+            interface_name = self.get_external_device_interface_name(
+                ex_gw_port)
+            fip_statuses = self.configure_fip_addresses(interface_name)
+
+        except (n_exc.FloatingIpSetupException,
+                n_exc.IpTablesApplyException):
+                # All floating IPs must be put in error state
+                LOG.exception(_LE("Failed to process floating IPs."))
+                fip_statuses = self.put_fips_in_error_state()
+        finally:
+            self.update_fip_statuses(agent, fip_statuses)
 
     def update_fip_statuses(self, agent, fip_statuses):
         # Identify floating IPs which were disabled
@@ -699,21 +709,37 @@ class RouterInfo(object):
             agent.context, self.router_id, fip_statuses)
 
     @common_utils.exception_logger()
-    def process(self, agent, delete=False):
+    def process_delete(self, agent):
+        """Process the delete of this router
+
+        This method is the point where the agent requests that this router
+        be deleted. This is a separate code path from process in that it
+        avoids any changes to the qrouter namespace that will be removed
+        at the end of the operation.
+
+        :param agent: Passes the agent in order to send RPC messages.
+        """
+        LOG.debug("process router delete")
+        self._process_internal_ports(agent.pd)
+        agent.pd.sync_router(self.router['id'])
+        self._process_external_on_delete(agent)
+
+    @common_utils.exception_logger()
+    def process(self, agent):
         """Process updates to this router
 
         This method is the point where the agent requests that updates be
         applied to this router.
 
         :param agent: Passes the agent in order to send RPC messages.
-        :param delete: Indicates whether this update is from a delete operation
         """
         LOG.debug("process router updates")
         self._process_internal_ports(agent.pd)
         agent.pd.sync_router(self.router['id'])
-        self.process_external(agent, delete)
+        self.process_external(agent)
         # Process static routes for router
-        self.routes_updated()
+        self.routes_updated(self.routes, self.router['routes'])
+        self.routes = self.router['routes']
 
         # Update ex_gw_port and enable_snat on the router info cache
         self.ex_gw_port = self.get_ex_gw_port()

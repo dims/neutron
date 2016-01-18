@@ -25,6 +25,7 @@ from oslo_config import cfg
 from oslo_log import log as logging
 import oslo_messaging
 from oslo_service import loopingcall
+from oslo_service import systemd
 import six
 from six import moves
 
@@ -318,7 +319,11 @@ class OVSNeutronAgent(sg_rpc.SecurityGroupAgentRpcCallbackMixin,
                 LOG.info(_LI('Agent has just been revived. '
                              'Doing a full sync.'))
                 self.fullsync = True
-            self.agent_state.pop('start_flag', None)
+
+            if self.agent_state.pop('start_flag', None):
+                # On initial start, we notify systemd after initialization
+                # is complete.
+                systemd.notify_once()
         except Exception:
             LOG.exception(_LE("Failed reporting state!"))
 
@@ -998,8 +1003,9 @@ class OVSNeutronAgent(sg_rpc.SecurityGroupAgentRpcCallbackMixin,
             self.tun_br = self.br_tun_cls(tun_br_name)
         self.tun_br.set_agent_uuid_stamp(self.agent_uuid_stamp)
 
-        if not self.tun_br.bridge_exists(self.tun_br.br_name):
-            self.tun_br.create(secure_mode=True)
+        # tun_br.create() won't recreate bridge if it exists, but will handle
+        # cases where something like datapath_type has changed
+        self.tun_br.create(secure_mode=True)
         self.tun_br.setup_controllers(self.conf)
         if (not self.int_br.port_exists(self.conf.OVS.int_peer_patch_port) or
                 self.patch_tun_ofport == ovs_lib.INVALID_OFPORT):
@@ -1057,6 +1063,9 @@ class OVSNeutronAgent(sg_rpc.SecurityGroupAgentRpcCallbackMixin,
                            'bridge': bridge})
                 sys.exit(1)
             br = self.br_phys_cls(bridge)
+            # The bridge already exists, so create won't recreate it, but will
+            # handle things like changing the datapath_type
+            br.create()
             br.setup_controllers(self.conf)
             br.setup_default_table()
             self.phys_brs[physical_network] = br
@@ -1569,9 +1578,6 @@ class OVSNeutronAgent(sg_rpc.SecurityGroupAgentRpcCallbackMixin,
                                   "from server"), self.iter_num)
                 resync_a = True
 
-        # Ports are bound before calling the sg_agent setup. This function
-        # fulfill the information needed by the sg_agent setup.
-        self._bind_devices(need_binding_devices)
         # TODO(salv-orlando): Optimize avoiding applying filters
         # unnecessarily, (eg: when there are no IP address changes)
         added_ports = port_info.get('added', set())
@@ -1579,6 +1585,7 @@ class OVSNeutronAgent(sg_rpc.SecurityGroupAgentRpcCallbackMixin,
             added_ports -= set(security_disabled_ports)
         self.sg_agent.setup_port_filters(added_ports,
                                          port_info.get('updated', set()))
+        self._bind_devices(need_binding_devices)
 
         if 'removed' in port_info and port_info['removed']:
             start = time.time()

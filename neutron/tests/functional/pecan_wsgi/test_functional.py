@@ -15,10 +15,13 @@
 
 import os
 
+from collections import namedtuple
 import mock
 from oslo_config import cfg
+from oslo_policy import policy as oslo_policy
 from oslo_serialization import jsonutils
 from oslo_utils import uuidutils
+import pecan
 from pecan import request
 from pecan import set_config
 from pecan.testing import load_test_app
@@ -30,7 +33,22 @@ from neutron.common import exceptions as n_exc
 from neutron import context
 from neutron import manager
 from neutron.pecan_wsgi.controllers import root as controllers
+from neutron import policy
 from neutron.tests.unit import testlib_api
+
+_SERVICE_PLUGIN_RESOURCE = 'serviceplugin'
+_SERVICE_PLUGIN_COLLECTION = _SERVICE_PLUGIN_RESOURCE + 's'
+_SERVICE_PLUGIN_INDEX_BODY = {_SERVICE_PLUGIN_COLLECTION: []}
+
+
+class FakeServicePluginController(object):
+    resource = _SERVICE_PLUGIN_RESOURCE
+
+    @pecan.expose(generic=True,
+                  content_type='application/json',
+                  template='json')
+    def index(self):
+        return _SERVICE_PLUGIN_INDEX_BODY
 
 
 class PecanFunctionalTest(testlib_api.SqlTestCase):
@@ -42,6 +60,7 @@ class PecanFunctionalTest(testlib_api.SqlTestCase):
         self.addCleanup(set_config, {}, overwrite=True)
         self.set_config_overrides()
         self.setup_app()
+        self.setup_service_plugin()
 
     def setup_app(self):
         self.app = load_test_app(os.path.join(
@@ -66,6 +85,10 @@ class PecanFunctionalTest(testlib_api.SqlTestCase):
 
     def set_config_overrides(self):
         cfg.CONF.set_override('auth_strategy', 'noauth')
+
+    def setup_service_plugin(self):
+        manager.NeutronManager.set_controller_for_resource(
+            _SERVICE_PLUGIN_COLLECTION, FakeServicePluginController())
 
 
 class TestV2Controller(PecanFunctionalTest):
@@ -103,6 +126,15 @@ class TestV2Controller(PecanFunctionalTest):
     def test_get_specific_extension(self):
         response = self.app.get('/v2.0/extensions/allowed-address-pairs.json')
         self.assertEqual(response.status_int, 200)
+
+    def test_service_plugin_uri(self):
+        service_plugin = namedtuple('DummyServicePlugin', 'path_prefix')
+        service_plugin.path_prefix = 'dummy'
+        nm = manager.NeutronManager.get_instance()
+        nm.service_plugins['dummy_sp'] = service_plugin
+        response = self.app.get('/v2.0/dummy/serviceplugins.json')
+        self.assertEqual(200, response.status_int)
+        self.assertEqual(_SERVICE_PLUGIN_INDEX_BODY, response.json_body)
 
 
 class TestErrors(PecanFunctionalTest):
@@ -293,9 +325,139 @@ class TestEnforcementHooks(PecanFunctionalTest):
         # TODO(kevinbenton): this test should do something
         pass
 
-    def test_policy_enforcement(self):
-        # TODO(kevinbenton): this test should do something
-        pass
+
+class TestPolicyEnforcementHook(PecanFunctionalTest):
+
+    FAKE_RESOURCE = {
+        'mehs': {
+            'id': {'allow_post': False, 'allow_put': False,
+                   'is_visible': True, 'primary_key': True},
+            'attr': {'allow_post': True, 'allow_put': True,
+                     'is_visible': True, 'default': ''},
+            'restricted_attr': {'allow_post': True, 'allow_put': True,
+                                'is_visible': True, 'default': ''},
+            'tenant_id': {'allow_post': True, 'allow_put': False,
+                          'required_by_policy': True,
+                          'validate': {'type:string':
+                                       attributes.TENANT_ID_MAX_LEN},
+                          'is_visible': True}
+        }
+    }
+
+    def setUp(self):
+        # Create a controller for a fake resource. This will make the tests
+        # independent from the evolution of the API (so if one changes the API
+        # or the default policies there won't be any risk of breaking these
+        # tests, or at least I hope so)
+        super(TestPolicyEnforcementHook, self).setUp()
+        self.mock_plugin = mock.Mock()
+        attributes.RESOURCE_ATTRIBUTE_MAP.update(self.FAKE_RESOURCE)
+        attributes.PLURALS['mehs'] = 'meh'
+        manager.NeutronManager.set_plugin_for_resource('meh', self.mock_plugin)
+        fake_controller = controllers.CollectionsController('mehs', 'meh')
+        manager.NeutronManager.set_controller_for_resource(
+            'mehs', fake_controller)
+        # Inject policies for the fake resource
+        policy.init()
+        policy._ENFORCER.set_rules(
+            oslo_policy.Rules.from_dict(
+                {'create_meh': '',
+                 'update_meh': 'rule:admin_only',
+                 'delete_meh': 'rule:admin_only',
+                 'get_meh': 'rule:admin_only or field:mehs:id=xxx',
+                 'get_meh:restricted_attr': 'rule:admin_only'}),
+            overwrite=False)
+
+    def test_before_on_create_authorized(self):
+        # Mock a return value for an hypothetical create operation
+        self.mock_plugin.create_meh.return_value = {
+            'id': 'xxx',
+            'attr': 'meh',
+            'restricted_attr': '',
+            'tenant_id': 'tenid'}
+        response = self.app.post_json('/v2.0/mehs.json',
+                                      params={'meh': {'attr': 'meh'}},
+                                      headers={'X-Project-Id': 'tenid'})
+        # We expect this operation to succeed
+        self.assertEqual(201, response.status_int)
+        self.assertEqual(0, self.mock_plugin.get_meh.call_count)
+        self.assertEqual(1, self.mock_plugin.create_meh.call_count)
+
+    def test_before_on_put_not_authorized(self):
+        # The policy hook here should load the resource, and therefore we must
+        # mock a get response
+        self.mock_plugin.get_meh.return_value = {
+            'id': 'xxx',
+            'attr': 'meh',
+            'restricted_attr': '',
+            'tenant_id': 'tenid'}
+        # The policy engine should trigger an exception in 'before', and the
+        # plugin method should not be called at all
+        response = self.app.put_json('/v2.0/mehs/xxx.json',
+                                     params={'meh': {'attr': 'meh'}},
+                                     headers={'X-Project-Id': 'tenid'},
+                                     expect_errors=True)
+        self.assertEqual(403, response.status_int)
+        self.assertEqual(1, self.mock_plugin.get_meh.call_count)
+        self.assertEqual(0, self.mock_plugin.update_meh.call_count)
+
+    def test_before_on_delete_not_authorized(self):
+        # The policy hook here should load the resource, and therefore we must
+        # mock a get response
+        self.mock_plugin.delete_meh.return_value = None
+        self.mock_plugin.get_meh.return_value = {
+            'id': 'xxx',
+            'attr': 'meh',
+            'restricted_attr': '',
+            'tenant_id': 'tenid'}
+        # The policy engine should trigger an exception in 'before', and the
+        # plugin method should not be called
+        response = self.app.delete_json('/v2.0/mehs/xxx.json',
+                                        headers={'X-Project-Id': 'tenid'},
+                                        expect_errors=True)
+        self.assertEqual(403, response.status_int)
+        self.assertEqual(1, self.mock_plugin.get_meh.call_count)
+        self.assertEqual(0, self.mock_plugin.delete_meh.call_count)
+
+    def test_after_on_get_not_authorized(self):
+        # The GET test policy will deny access to anything whose id is not
+        # 'xxx', so the following request should be forbidden
+        self.mock_plugin.get_meh.return_value = {
+            'id': 'yyy',
+            'attr': 'meh',
+            'restricted_attr': '',
+            'tenant_id': 'tenid'}
+        # The policy engine should trigger an exception in 'after', and the
+        # plugin method should be called
+        response = self.app.get('/v2.0/mehs/yyy.json',
+                                headers={'X-Project-Id': 'tenid'},
+                                expect_errors=True)
+        self.assertEqual(403, response.status_int)
+        self.assertEqual(1, self.mock_plugin.get_meh.call_count)
+
+    def test_after_on_get_excludes_admin_attribute(self):
+        self.mock_plugin.get_meh.return_value = {
+            'id': 'xxx',
+            'attr': 'meh',
+            'restricted_attr': '',
+            'tenant_id': 'tenid'}
+        response = self.app.get('/v2.0/mehs/xxx.json',
+                                headers={'X-Project-Id': 'tenid'})
+        self.assertEqual(200, response.status_int)
+        json_response = jsonutils.loads(response.body)
+        self.assertNotIn('restricted_attr', json_response['meh'])
+
+    def test_after_on_list_excludes_admin_attribute(self):
+        self.mock_plugin.get_mehs.return_value = [{
+            'id': 'xxx',
+            'attr': 'meh',
+            'restricted_attr': '',
+            'tenant_id': 'tenid'}]
+        response = self.app.get('/v2.0/mehs',
+                                headers={'X-Project-Id': 'tenid'})
+        self.assertEqual(200, response.status_int)
+        json_response = jsonutils.loads(response.body)
+        self.assertNotIn('restricted_attr', json_response['mehs'][0])
 
 
 class TestRootController(PecanFunctionalTest):
@@ -330,3 +492,89 @@ class TestRootController(PecanFunctionalTest):
 
     def test_head(self):
         self._test_method_returns_405('head')
+
+
+class TestQuotasController(TestRootController):
+    """Test quota management API controller."""
+
+    base_url = '/v2.0/quotas'
+    default_expected_limits = {
+        'network': 10,
+        'port': 50,
+        'subnet': 10}
+
+    def _verify_limits(self, response, limits):
+        for resource, limit in limits.items():
+            self.assertEqual(limit, response['quota'][resource])
+
+    def _verify_default_limits(self, response):
+        self._verify_limits(response, self.default_expected_limits)
+
+    def _verify_after_update(self, response, updated_limits):
+        expected_limits = self.default_expected_limits.copy()
+        expected_limits.update(updated_limits)
+        self._verify_limits(response, expected_limits)
+
+    def test_index_admin(self):
+        # NOTE(salv-orlando): The quota controller has an hardcoded check for
+        # admin-ness for this operation, which is supposed to return quotas for
+        # all tenants. Such check is "vestigial" from the home-grown WSGI and
+        # shall be removed
+        response = self.app.get('%s.json' % self.base_url,
+                                headers={'X-Project-Id': 'admin',
+                                         'X-Roles': 'admin'})
+        self.assertEqual(200, response.status_int)
+
+    def test_index(self):
+        response = self.app.get('%s.json' % self.base_url, expect_errors=True)
+        self.assertEqual(403, response.status_int)
+
+    def test_get_admin(self):
+        response = self.app.get('%s/foo.json' % self.base_url,
+                                headers={'X-Project-Id': 'admin',
+                                         'X-Roles': 'admin'})
+        self.assertEqual(200, response.status_int)
+        # As quota limits have not been updated, expect default values
+        json_body = jsonutils.loads(response.body)
+        self._verify_default_limits(json_body)
+
+    def test_get(self):
+        # It is not ok to access another tenant's limits
+        url = '%s/foo.json' % self.base_url
+        response = self.app.get(url, expect_errors=True)
+        self.assertEqual(403, response.status_int)
+        # It is however ok to retrieve your own limits
+        response = self.app.get(url, headers={'X-Project-Id': 'foo'})
+        self.assertEqual(200, response.status_int)
+        json_body = jsonutils.loads(response.body)
+        self._verify_default_limits(json_body)
+
+    def test_put_get_delete(self):
+        # PUT and DELETE actions are in the same test as a meaningful DELETE
+        # test would require a put anyway
+        url = '%s/foo.json' % self.base_url
+        response = self.app.put_json(url,
+                                     params={'quota': {'network': 99}},
+                                     headers={'X-Project-Id': 'admin',
+                                              'X-Roles': 'admin'})
+        self.assertEqual(200, response.status_int)
+        json_body = jsonutils.loads(response.body)
+        self._verify_after_update(json_body, {'network': 99})
+
+        response = self.app.get(url, headers={'X-Project-Id': 'foo'})
+        self.assertEqual(200, response.status_int)
+        json_body = jsonutils.loads(response.body)
+        self._verify_after_update(json_body, {'network': 99})
+
+        response = self.app.delete(url, headers={'X-Project-Id': 'admin',
+                                                 'X-Roles': 'admin'})
+        self.assertEqual(204, response.status_int)
+        # As DELETE does not return a body we need another GET
+        response = self.app.get(url, headers={'X-Project-Id': 'foo'})
+        self.assertEqual(200, response.status_int)
+        json_body = jsonutils.loads(response.body)
+        self._verify_default_limits(json_body)
+
+    def test_delete(self):
+        # TODO(salv-orlando)
+        pass
