@@ -551,6 +551,32 @@ class TestOvsNeutronAgent(object):
                 vif_port_set, registered_ports, port_tags_dict=port_tags_dict)
         self.assertEqual(expected, actual)
 
+    def test_update_retries_map_and_remove_devs_not_to_retry(self):
+        failed_devices_retries_map = {
+            'device_not_to_retry': constants.MAX_DEVICE_RETRIES,
+            'device_to_retry': 2,
+            'ancillary_not_to_retry': constants.MAX_DEVICE_RETRIES,
+            'ancillary_to_retry': 1}
+        failed_devices = {
+            'added': set(['device_not_to_retry']),
+            'removed': set(['device_to_retry', 'new_device'])}
+        failed_ancillary_devices = {'added': set(['ancillary_to_retry']),
+                                    'removed': set(['ancillary_not_to_retry'])}
+        expected_failed_devices_retries_map = {
+            'device_to_retry': 3, 'new_device': 1, 'ancillary_to_retry': 2}
+        (new_failed_devices_retries_map, devices_not_to_retry,
+         ancillary_devices_not_t_retry) = self.agent._get_devices_not_to_retry(
+            failed_devices, failed_ancillary_devices,
+            failed_devices_retries_map)
+        self.agent._remove_devices_not_to_retry(
+            failed_devices, failed_ancillary_devices, devices_not_to_retry,
+            ancillary_devices_not_t_retry)
+        self.assertIn('device_to_retry', failed_devices['removed'])
+        self.assertNotIn('device_not_to_retry', failed_devices['added'])
+        self.assertEqual(
+            expected_failed_devices_retries_map,
+            new_failed_devices_retries_map)
+
     def test_bind_devices(self):
         devices_up = ['tap1']
         devices_down = ['tap2']
@@ -2668,10 +2694,10 @@ class TestOvsDvrNeutronAgent(object):
                                side_effect=oslo_messaging.RemoteError),\
                 mock.patch.object(self.agent, 'int_br', new=int_br),\
                 mock.patch.object(self.agent.dvr_agent, 'int_br', new=int_br):
-            self.agent.dvr_agent.get_dvr_mac_address()
-            self.assertIsNone(self.agent.dvr_agent.dvr_mac_address)
-            self.assertFalse(self.agent.dvr_agent.in_distributed_mode())
-            self.assertEqual([mock.call.install_normal()], int_br.mock_calls)
+            with testtools.ExpectedException(SystemExit):
+                self.agent.dvr_agent.get_dvr_mac_address()
+                self.assertIsNone(self.agent.dvr_agent.dvr_mac_address)
+                self.assertFalse(self.agent.dvr_agent.in_distributed_mode())
 
     def test_get_dvr_mac_address_retried(self):
         valid_entry = {'host': 'cn1', 'mac_address': 'aa:22:33:44:55:66'}
@@ -2702,11 +2728,12 @@ class TestOvsDvrNeutronAgent(object):
                 mock.patch.object(utils, "execute"),\
                 mock.patch.object(self.agent, 'int_br', new=int_br),\
                 mock.patch.object(self.agent.dvr_agent, 'int_br', new=int_br):
-            self.agent.dvr_agent.get_dvr_mac_address()
-            self.assertIsNone(self.agent.dvr_agent.dvr_mac_address)
-            self.assertFalse(self.agent.dvr_agent.in_distributed_mode())
-            self.assertEqual(self.agent.dvr_agent.plugin_rpc.
-                             get_dvr_mac_address_by_host.call_count, 5)
+            with testtools.ExpectedException(SystemExit):
+                self.agent.dvr_agent.get_dvr_mac_address()
+                self.assertIsNone(self.agent.dvr_agent.dvr_mac_address)
+                self.assertFalse(self.agent.dvr_agent.in_distributed_mode())
+                self.assertEqual(self.agent.dvr_agent.plugin_rpc.
+                                 get_dvr_mac_address_by_host.call_count, 5)
 
     def test_dvr_mac_address_update(self):
         self._setup_for_dvr_test()

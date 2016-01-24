@@ -14,10 +14,10 @@
 #    under the License.
 
 import copy
-
-import eventlet
 from itertools import chain as iter_chain
 from itertools import combinations as iter_combinations
+
+import eventlet
 import mock
 import netaddr
 from oslo_log import log
@@ -2245,6 +2245,20 @@ class TestBasicRouterOperations(BasicRouterOperationsFramework):
                 self.utils_replace_file.call_args[0][1])
             assertFlag(managed_flag)('AdvManagedFlag on;',
                 self.utils_replace_file.call_args[0][1])
+
+    def test_generate_radvd_intervals(self):
+        self.conf.set_override('min_rtr_adv_interval', 22)
+        self.conf.set_override('max_rtr_adv_interval', 66)
+        router = l3_test_common.prepare_router_data()
+        ipv6_subnet_modes = [{'ra_mode': l3_constants.IPV6_SLAAC,
+                             'address_mode': l3_constants.IPV6_SLAAC}]
+        ri = self._process_router_ipv6_subnet_added(router,
+                                                    ipv6_subnet_modes)
+        ri.radvd._generate_radvd_conf(router[l3_constants.INTERFACE_KEY])
+        self.assertIn("MinRtrAdvInterval 22",
+                      self.utils_replace_file.call_args[0][1])
+        self.assertIn("MaxRtrAdvInterval 66",
+                      self.utils_replace_file.call_args[0][1])
 
     def test_generate_radvd_rdnss_conf(self):
         router = l3_test_common.prepare_router_data()

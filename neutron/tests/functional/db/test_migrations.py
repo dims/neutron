@@ -12,15 +12,13 @@
 #    License for the specific language governing permissions and limitations
 #    under the License.
 
-import six
-
 from alembic import script as alembic_script
 from contextlib import contextmanager
-import mock
 from oslo_config import cfg
 from oslo_config import fixture as config_fixture
 from oslo_db.sqlalchemy import test_base
 from oslo_db.sqlalchemy import test_migrations
+import six
 import sqlalchemy
 from sqlalchemy import event
 import sqlalchemy.types as types
@@ -102,11 +100,6 @@ class _TestModelsMigrations(test_migrations.ModelsMigrationsSync):
     '''
 
     def setUp(self):
-        patch = mock.patch.dict('sys.modules', {
-            'heleosapi': mock.MagicMock(),
-        })
-        patch.start()
-        self.addCleanup(patch.stop)
         super(_TestModelsMigrations, self).setUp()
         self.cfg = self.useFixture(config_fixture.Config())
         self.cfg.config(core_plugin=CORE_PLUGIN)
@@ -283,6 +276,20 @@ class TestModelsMigrationsMysql(_TestModelsMigrations,
                    insp.get_table_options(table)['mysql_engine'] != 'InnoDB'
                    and table != 'alembic_version']
             self.assertEqual(0, len(res), "%s non InnoDB tables created" % res)
+
+    def _test_has_offline_migrations(self, revision, expected):
+        engine = self.get_engine()
+        cfg.CONF.set_override('connection', engine.url, group='database')
+        migration.do_alembic_command(self.alembic_config, 'upgrade', revision)
+        self.assertEqual(expected,
+                         migration.has_offline_migrations(self.alembic_config,
+                                                          'unused'))
+
+    def test_has_offline_migrations_pending_contract_scripts(self):
+        self._test_has_offline_migrations('kilo', True)
+
+    def test_has_offline_migrations_all_heads_upgraded(self):
+        self._test_has_offline_migrations('heads', False)
 
 
 class TestModelsMigrationsPsql(_TestModelsMigrations,
