@@ -111,6 +111,15 @@ class FloatingIP(model_base.HasStandardAttributes, model_base.BASEV2,
     floating_port_id = sa.Column(sa.String(36),
                                  sa.ForeignKey('ports.id', ondelete="CASCADE"),
                                  nullable=False)
+
+    # The ORM-level "delete" cascade relationship between port and floating_ip
+    # is required for causing the in-Python event "after_delete" that needs for
+    # proper quota management in case when cascade removal of the floating_ip
+    # happens after removal of the floating_port
+    port = orm.relationship(models_v2.Port,
+                            backref=orm.backref('floating_ips',
+                                                cascade='all,delete-orphan'),
+                            foreign_keys='FloatingIP.floating_port_id')
     fixed_port_id = sa.Column(sa.String(36), sa.ForeignKey('ports.id'))
     fixed_ip_address = sa.Column(sa.String(64))
     router_id = sa.Column(sa.String(36), sa.ForeignKey('routers.id'))
@@ -643,11 +652,12 @@ class L3_NAT_dbonly_mixin(l3.RouterPluginBase):
 
     @staticmethod
     def _make_router_interface_info(
-            router_id, tenant_id, port_id, subnet_id, subnet_ids):
+            router_id, tenant_id, port_id, network_id, subnet_id, subnet_ids):
         return {
             'id': router_id,
             'tenant_id': tenant_id,
             'port_id': port_id,
+            'network_id': network_id,
             'subnet_id': subnet_id,  # deprecated by IPv6 multi-prefix
             'subnet_ids': subnet_ids
         }
@@ -695,8 +705,8 @@ class L3_NAT_dbonly_mixin(l3.RouterPluginBase):
                         interface_info=interface_info)
 
         return self._make_router_interface_info(
-            router.id, port['tenant_id'], port['id'], subnets[-1]['id'],
-            [subnet['id'] for subnet in subnets])
+            router.id, port['tenant_id'], port['id'], port['network_id'],
+            subnets[-1]['id'], [subnet['id'] for subnet in subnets])
 
     def _confirm_router_interface_not_in_use(self, context, router_id,
                                              subnet_id):
@@ -809,7 +819,8 @@ class L3_NAT_dbonly_mixin(l3.RouterPluginBase):
                         cidrs=[x['cidr'] for x in subnets],
                         network_id=gw_network_id)
         return self._make_router_interface_info(router_id, port['tenant_id'],
-                                                port['id'], subnets[0]['id'],
+                                                port['id'], port['network_id'],
+                                                subnets[0]['id'],
                                                 [subnet['id'] for subnet in
                                                     subnets])
 
@@ -993,7 +1004,9 @@ class L3_NAT_dbonly_mixin(l3.RouterPluginBase):
                               'last_known_router_id': previous_router_id})
         next_hop = None
         if router_id:
-            router = self._get_router(context, router_id)
+            # NOTE(tidwellr) use admin context here
+            # tenant may not own the router and that's OK on a FIP association
+            router = self._get_router(context.elevated(), router_id)
             gw_port = router.gw_port
             for fixed_ip in gw_port.fixed_ips:
                 addr = netaddr.IPAddress(fixed_ip.ip_address)
@@ -1031,6 +1044,7 @@ class L3_NAT_dbonly_mixin(l3.RouterPluginBase):
             msg = _("Network %s does not contain any IPv4 subnet") % f_net_id
             raise n_exc.BadRequest(resource='floatingip', msg=msg)
 
+        dns_integration = utils.is_extension_supported(self, 'dns-integration')
         with context.session.begin(subtransactions=True):
             # This external port is never exposed to the tenant.
             # it is used purely for internal system and admin use when
@@ -1078,12 +1092,14 @@ class L3_NAT_dbonly_mixin(l3.RouterPluginBase):
             context.session.add(floatingip_db)
             floatingip_dict = self._make_floatingip_dict(
                 floatingip_db, process_extensions=False)
-            dns_actions_data = self._process_dns_floatingip_create_precommit(
-                context, floatingip_dict, fip)
+            if dns_integration:
+                dns_data = self._process_dns_floatingip_create_precommit(
+                    context, floatingip_dict, fip)
 
-        self._process_dns_floatingip_create_postcommit(context,
-                                                       floatingip_dict,
-                                                       dns_actions_data)
+        if dns_integration:
+            self._process_dns_floatingip_create_postcommit(context,
+                                                           floatingip_dict,
+                                                           dns_data)
         return floatingip_dict
 
     def create_floatingip(self, context, floatingip,
@@ -1092,6 +1108,7 @@ class L3_NAT_dbonly_mixin(l3.RouterPluginBase):
 
     def _update_floatingip(self, context, id, floatingip):
         fip = floatingip['floatingip']
+        dns_integration = utils.is_extension_supported(self, 'dns-integration')
         with context.session.begin(subtransactions=True):
             floatingip_db = self._get_floatingip(context, id)
             old_floatingip = self._make_floatingip_dict(floatingip_db)
@@ -1102,11 +1119,13 @@ class L3_NAT_dbonly_mixin(l3.RouterPluginBase):
                                    self._core_plugin.get_port(
                                        context.elevated(), fip_port_id))
             floatingip_dict = self._make_floatingip_dict(floatingip_db)
-            dns_actions_data = self._process_dns_floatingip_update_precommit(
-                context, floatingip_dict)
-        self._process_dns_floatingip_update_postcommit(context,
-                                                       floatingip_dict,
-                                                       dns_actions_data)
+            if dns_integration:
+                dns_data = self._process_dns_floatingip_update_precommit(
+                    context, floatingip_dict)
+        if dns_integration:
+            self._process_dns_floatingip_update_postcommit(context,
+                                                           floatingip_dict,
+                                                           dns_data)
         return old_floatingip, floatingip_dict
 
     def _floatingips_to_router_ids(self, floatingips):
@@ -1128,7 +1147,8 @@ class L3_NAT_dbonly_mixin(l3.RouterPluginBase):
     def _delete_floatingip(self, context, id):
         floatingip = self._get_floatingip(context, id)
         floatingip_dict = self._make_floatingip_dict(floatingip)
-        self._process_dns_floatingip_delete(context, floatingip_dict)
+        if utils.is_extension_supported(self, 'dns-integration'):
+            self._process_dns_floatingip_delete(context, floatingip_dict)
         # Foreign key cascade will take care of the removal of the
         # floating IP record once the port is deleted. We can't start
         # a transaction first to remove it ourselves because the delete_port

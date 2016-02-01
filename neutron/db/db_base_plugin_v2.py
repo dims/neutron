@@ -23,6 +23,7 @@ from oslo_utils import excutils
 from oslo_utils import uuidutils
 from sqlalchemy import and_
 from sqlalchemy import event
+from sqlalchemy import not_
 
 from neutron._i18n import _, _LE, _LI
 from neutron.api.rpc.agentnotifiers import l3_rpc_agent_api
@@ -208,13 +209,9 @@ class NeutronDbPluginV2(db_base_plugin_common.DbBasePluginCommon,
         if updated['shared'] == original.shared or updated['shared']:
             return
         ports = self._model_query(
-            context, models_v2.Port).filter(
-                and_(
-                    models_v2.Port.network_id == id,
-                    models_v2.Port.device_owner !=
-                    constants.DEVICE_OWNER_ROUTER_GW,
-                    models_v2.Port.device_owner !=
-                    constants.DEVICE_OWNER_FLOATINGIP))
+            context, models_v2.Port).filter(models_v2.Port.network_id == id)
+        ports = ports.filter(not_(models_v2.Port.device_owner.startswith(
+            constants.DEVICE_OWNER_NETWORK_PREFIX)))
         subnets = self._model_query(
             context, models_v2.Subnet).filter(
                 models_v2.Subnet.network_id == id)
@@ -1175,7 +1172,8 @@ class NeutronDbPluginV2(db_base_plugin_common.DbBasePluginCommon,
                          status=p.get('status', constants.PORT_STATUS_ACTIVE),
                          device_id=p['device_id'],
                          device_owner=p['device_owner'])
-        if 'dns_name' in p:
+        if ('dns-integration' in self.supported_extension_aliases and
+            'dns_name' in p):
             request_dns_name = self._get_request_dns_name(p)
             port_data['dns_name'] = request_dns_name
 
@@ -1193,13 +1191,15 @@ class NeutronDbPluginV2(db_base_plugin_common.DbBasePluginCommon,
 
             ips = self.ipam.allocate_ips_for_port_and_store(context, port,
                                                             port_id)
-            if 'dns_name' in p:
+            if ('dns-integration' in self.supported_extension_aliases and
+                'dns_name' in p):
                 dns_assignment = []
                 if ips:
                     dns_assignment = self._get_dns_names_for_port(
                         context, ips, request_dns_name)
 
-        if 'dns_name' in p:
+        if ('dns-integration' in self.supported_extension_aliases and
+            'dns_name' in p):
             db_port['dns_assignment'] = dns_assignment
         return self._make_port_dict(db_port, process_extensions=False)
 

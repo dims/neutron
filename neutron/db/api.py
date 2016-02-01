@@ -21,7 +21,6 @@ from oslo_db import exception as db_exc
 from oslo_db.sqlalchemy import session
 from oslo_utils import excutils
 from oslo_utils import uuidutils
-from sqlalchemy import exc
 
 from neutron.common import exceptions as n_exc
 from neutron.db import common_db_mixin
@@ -81,13 +80,12 @@ def get_session(autocommit=True, expire_on_commit=False, use_slave=False):
 @contextlib.contextmanager
 def autonested_transaction(sess):
     """This is a convenience method to not bother with 'nested' parameter."""
-    try:
-        session_context = sess.begin_nested()
-    except exc.InvalidRequestError:
+    if sess.is_active:
+        session_context = sess.begin(nested=True)
+    else:
         session_context = sess.begin(subtransactions=True)
-    finally:
-        with session_context as tx:
-            yield tx
+    with session_context as tx:
+        yield tx
 
 
 # Common database operation implementations
@@ -107,7 +105,7 @@ def get_objects(context, model, **kwargs):
 
 def create_object(context, model, values):
     with context.session.begin(subtransactions=True):
-        if 'id' not in values:
+        if 'id' not in values and hasattr(model, 'id'):
             values['id'] = uuidutils.generate_uuid()
         db_obj = model(**values)
         context.session.add(db_obj)

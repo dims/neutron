@@ -29,6 +29,7 @@ import testscenarios
 from neutron.common import constants
 from neutron import context as n_context
 from neutron.db import agents_db
+from neutron.db import api as db_api
 from neutron.db import common_db_mixin
 from neutron.db import db_base_plugin_v2 as db_v2
 from neutron.db import l3_agentschedulers_db
@@ -271,6 +272,37 @@ class L3SchedulerBaseTestCase(base.BaseTestCase):
 
     def test__bind_routers_ha_no_binding(self):
         self._test__bind_routers_ha(has_binding=False)
+
+    def test_create_ha_port_and_bind_duplicate(self):
+        agent = agents_db.Agent(id='foo_agent')
+        context = n_context.get_admin_context()
+        with mock.patch.object(self.plugin, 'get_ha_network',
+                               return_value=mock.Mock()),\
+                mock.patch.object(self.scheduler, 'bind_router') as bind,\
+                mock.patch.object(l3_agent_scheduler.LOG, 'debug') as flog,\
+                mock.patch.object(db_api, 'autonested_transaction',
+                                  side_effect=db_exc.DBDuplicateEntry):
+            self.scheduler.create_ha_port_and_bind(self.plugin, context,
+                                                   'foo_router', 'test',
+                                                   agent)
+            self.assertEqual(1, flog.call_count)
+            args, kwargs = flog.call_args
+            self.assertIn('already scheduled for agent', args[0])
+            bind.assert_called_once_with(context, 'foo_router', agent)
+
+    def test__bind_ha_router_to_agents(self):
+        agent = agents_db.Agent(id='foo_agent')
+        context = n_context.get_admin_context()
+        with mock.patch.object(self.plugin, 'get_ha_router_port_bindings',
+                               return_value=[mock.Mock()]),\
+            mock.patch.object(db_api, 'autonested_transaction',
+                              side_effect=db_exc.DBDuplicateEntry),\
+            mock.patch.object(l3_agent_scheduler.LOG, 'debug') as flog:
+            self.scheduler._bind_ha_router_to_agents(self.plugin, context,
+                                                     'foo_router', [agent])
+            self.assertEqual(1, flog.call_count)
+            args, kwargs = flog.call_args
+            self.assertIn('already scheduled for agent', args[0])
 
     def test__get_candidates_iterable_on_early_returns(self):
         plugin = mock.MagicMock()
@@ -913,7 +945,7 @@ class L3DvrSchedulerTestCase(testlib_api.SqlTestCase):
             self.assertFalse(
                 l3plugin.dvr_handle_new_service_port.called)
             self.assertFalse(l3plugin.remove_router_from_l3_agent.called)
-            self.assertFalse(l3plugin.dvr_deletens_if_no_port.called)
+            self.assertFalse(l3plugin.get_dvr_routers_to_remove.called)
 
     def test__notify_l3_agent_new_port_action(self):
         kwargs = {
@@ -931,7 +963,7 @@ class L3DvrSchedulerTestCase(testlib_api.SqlTestCase):
                 'port', 'after_create', mock.ANY, **kwargs)
             l3plugin.update_arp_entry_for_dvr_service_port.\
                 assert_called_once_with(
-                    self.adminContext, kwargs.get('port'), 'add')
+                    self.adminContext, kwargs.get('port'))
             l3plugin.dvr_handle_new_service_port.assert_called_once_with(
                 self.adminContext, kwargs.get('port'))
 
@@ -978,7 +1010,7 @@ class L3DvrSchedulerTestCase(testlib_api.SqlTestCase):
             self.assertFalse(
                 l3plugin.dvr_handle_new_service_port.called)
             self.assertFalse(l3plugin.remove_router_from_l3_agent.called)
-            self.assertFalse(l3plugin.dvr_deletens_if_no_port.called)
+            self.assertFalse(l3plugin.get_dvr_routers_to_remove.called)
 
     def test__notify_l3_agent_update_port_with_mac_address_update(self):
         kwargs = {
@@ -1002,7 +1034,7 @@ class L3DvrSchedulerTestCase(testlib_api.SqlTestCase):
 
             l3plugin.update_arp_entry_for_dvr_service_port.\
                 assert_called_once_with(
-                    self.adminContext, kwargs.get('port'), 'add')
+                    self.adminContext, kwargs.get('port'))
             self.assertFalse(l3plugin.dvr_handle_new_service_port.called)
 
     def test__notify_l3_agent_update_port_with_port_binding_change(self):
@@ -1022,7 +1054,7 @@ class L3DvrSchedulerTestCase(testlib_api.SqlTestCase):
         with mock.patch.object(manager.NeutronManager,
                                'get_service_plugins',
                                return_value={'L3_ROUTER_NAT': l3plugin}),\
-                mock.patch.object(l3plugin, 'dvr_deletens_if_no_port',
+                mock.patch.object(l3plugin, 'get_dvr_routers_to_remove',
                                   return_value=[{'agent_id': 'foo_agent',
                                                  'router_id': 'foo_id'}]):
             l3_dvrscheduler_db._notify_l3_agent_port_update(
@@ -1030,7 +1062,9 @@ class L3DvrSchedulerTestCase(testlib_api.SqlTestCase):
             l3plugin.remove_router_from_l3_agent.assert_called_once_with(
                 mock.ANY, 'foo_agent', 'foo_id')
             self.assertEqual(
-                2, l3plugin.update_arp_entry_for_dvr_service_port.call_count)
+                1, l3plugin.update_arp_entry_for_dvr_service_port.call_count)
+            self.assertEqual(
+                1, l3plugin.delete_arp_entry_for_dvr_service_port.call_count)
             l3plugin.dvr_handle_new_service_port.assert_called_once_with(
                 self.adminContext, kwargs.get('port'))
 
@@ -1062,17 +1096,17 @@ class L3DvrSchedulerTestCase(testlib_api.SqlTestCase):
         with mock.patch.object(manager.NeutronManager,
                                'get_service_plugins',
                                return_value={'L3_ROUTER_NAT': l3plugin}),\
-                mock.patch.object(l3plugin, 'dvr_deletens_if_no_port',
+                mock.patch.object(l3plugin, 'get_dvr_routers_to_remove',
                                   return_value=[{'agent_id': 'foo_agent',
                                              'router_id': 'foo_id'}]):
             l3_dvrscheduler_db._notify_l3_agent_port_update(
                 'port', 'after_update', plugin, **kwargs)
 
             self.assertEqual(
-                1, l3plugin.update_arp_entry_for_dvr_service_port.call_count)
-            l3plugin.update_arp_entry_for_dvr_service_port.\
+                1, l3plugin.delete_arp_entry_for_dvr_service_port.call_count)
+            l3plugin.delete_arp_entry_for_dvr_service_port.\
                 assert_called_once_with(
-                    self.adminContext, mock.ANY, 'del')
+                    self.adminContext, mock.ANY)
 
             self.assertFalse(
                 l3plugin.dvr_handle_new_service_port.called)
@@ -1098,9 +1132,9 @@ class L3DvrSchedulerTestCase(testlib_api.SqlTestCase):
             }
             l3_dvrscheduler_db._notify_port_delete(
                 'port', 'after_delete', plugin, **kwargs)
-            l3plugin.update_arp_entry_for_dvr_service_port.\
+            l3plugin.delete_arp_entry_for_dvr_service_port.\
                 assert_called_once_with(
-                    self.adminContext, mock.ANY, 'del')
+                    self.adminContext, mock.ANY)
             l3plugin.remove_router_from_l3_agent.assert_called_once_with(
                 mock.ANY, 'foo_agent', 'foo_id')
 

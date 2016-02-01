@@ -66,34 +66,34 @@ class PluginInterface(object):
 class ExtensionDescriptor(object):
     """Base class that defines the contract for extensions."""
 
+    @abc.abstractmethod
     def get_name(self):
         """The name of the extension.
 
         e.g. 'Fox In Socks'
         """
-        raise NotImplementedError()
 
+    @abc.abstractmethod
     def get_alias(self):
         """The alias for the extension.
 
         e.g. 'FOXNSOX'
         """
-        raise NotImplementedError()
 
+    @abc.abstractmethod
     def get_description(self):
         """Friendly description for the extension.
 
         e.g. 'The Fox In Socks Extension'
         """
-        raise NotImplementedError()
 
+    @abc.abstractmethod
     def get_updated(self):
         """The timestamp when the extension was last updated.
 
         e.g. '2011-01-22T13:25:27-06:00'
         """
         # NOTE(justinsb): Not sure of the purpose of this is, vs the XML NS
-        raise NotImplementedError()
 
     def get_resources(self):
         """List of extensions.ResourceExtension extension objects.
@@ -440,10 +440,11 @@ class ExtensionManager(object):
                 # Exit loop as no progress was made
                 break
         if exts_to_process:
-            # NOTE(salv-orlando): Consider whether this error should be fatal
             LOG.error(_LE("It was impossible to process the following "
                           "extensions: %s because of missing requirements."),
                       ','.join(exts_to_process.keys()))
+            raise exceptions.ExtensionsNotFound(
+                extensions=list(exts_to_process.keys()))
 
         # Extending extensions' attributes map.
         for ext in processed_exts.values():
