@@ -14,6 +14,7 @@
 #    under the License.
 
 import mock
+from oslo_serialization import jsonutils
 import testtools
 
 from neutron.common import constants
@@ -138,22 +139,11 @@ class TestL2PopulationRpcTestCase(test_plugin.Ml2PluginV2TestCase):
         self.assertEqual(('00:00:00:00:00:00', '0.0.0.0'), port_info_list[0])
         self.assertEqual(('fa:16:3e:ff:8c:0f', '10.0.0.6'), port_info_list[1])
 
-    def test__marshall_fdb_entries(self):
-        entries = {'foouuid': {
-            'segment_id': 1001,
-            'ports': {'192.168.0.10': [('00:00:00:00:00:00', '0.0.0.0'),
-                                       ('fa:16:3e:ff:8c:0f', '10.0.0.6')]},
-            'network_type': 'vxlan'}}
-
-        entries = l2pop_rpc.L2populationAgentNotifyAPI._marshall_fdb_entries(
-            entries)
-
-        port_info_list = entries['foouuid']['ports']['192.168.0.10']
-        # Check that the PortInfo tuples have been converted to list
-        self.assertIsInstance(port_info_list[0], list)
-        self.assertIsInstance(port_info_list[1], list)
-        self.assertEqual(['00:00:00:00:00:00', '0.0.0.0'], port_info_list[0])
-        self.assertEqual(['fa:16:3e:ff:8c:0f', '10.0.0.6'], port_info_list[1])
+    def test_portinfo_marshalled_as_list(self):
+        entry = ['fa:16:3e:ff:8c:0f', '10.0.0.6']
+        payload = {'netuuid': {'ports': {'1': [l2pop_rpc.PortInfo(*entry)]}}}
+        result = jsonutils.loads(jsonutils.dumps(payload))
+        self.assertEqual(entry, result['netuuid']['ports']['1'][0])
 
     def test_fdb_add_called(self):
         self._register_ml2_agents()
@@ -410,6 +400,51 @@ class TestL2PopulationRpcTestCase(test_plugin.Ml2PluginV2TestCase):
 
                             self.mock_fanout.assert_called_with(
                                 mock.ANY, 'add_fdb_entries', expected2)
+
+    def test_fdb_add_called_dualstack(self):
+        self._register_ml2_agents()
+
+        host_arg = {portbindings.HOST_ID: HOST,
+                    'admin_state_up': True}
+        with self.subnet(self._network) as subnet,\
+            self.subnet(
+                self._network,
+                cidr='2001:db8::/64',
+                ip_version=6,
+                gateway_ip='fe80::1',
+                ipv6_address_mode=constants.IPV6_SLAAC) as subnet2:
+            with self.port(
+                subnet,
+                fixed_ips=[{'subnet_id': subnet['subnet']['id']},
+                           {'subnet_id': subnet2['subnet']['id']}],
+                device_owner=DEVICE_OWNER_COMPUTE,
+                arg_list=(portbindings.HOST_ID,),
+                **host_arg
+            ) as port:
+                p1 = port['port']
+
+                device = 'tap' + p1['id']
+
+                self.mock_fanout.reset_mock()
+                self.callbacks.update_device_up(self.adminContext,
+                                                agent_id=HOST,
+                                                device=device)
+
+                p1_ips = [p['ip_address'] for p in p1['fixed_ips']]
+                expected = {p1['network_id']:
+                            {'ports':
+                             {'20.0.0.1': [constants.FLOODING_ENTRY,
+                                           l2pop_rpc.PortInfo(
+                                               p1['mac_address'],
+                                               p1_ips[0]),
+                                           l2pop_rpc.PortInfo(
+                                               p1['mac_address'],
+                                               p1_ips[1])]},
+                             'network_type': 'vxlan',
+                             'segment_id': 1}}
+
+                self.mock_fanout.assert_called_with(
+                    mock.ANY, 'add_fdb_entries', expected)
 
     def test_update_port_down(self):
         self._register_ml2_agents()
@@ -743,6 +778,7 @@ class TestL2PopulationRpcTestCase(test_plugin.Ml2PluginV2TestCase):
                            device_owner=DEVICE_OWNER_COMPUTE,
                            arg_list=(portbindings.HOST_ID,),
                            **host_arg) as port1:
+                tunnel_ip = '20.0.0.1'
                 p1 = port1['port']
                 device1 = 'tap' + p1['id']
                 self.callbacks.update_device_up(
@@ -750,22 +786,21 @@ class TestL2PopulationRpcTestCase(test_plugin.Ml2PluginV2TestCase):
                     agent_id=HOST,
                     device=device1)
                 if twice:
+                    tunnel_ip = '20.0.0.4'
                     self._update_and_check_portbinding(p1['id'], HOST_4)
-                self._update_and_check_portbinding(p1['id'], HOST_2)
+                    self.callbacks.update_device_up(self.adminContext,
+                                                    agent_id=HOST_4,
+                                                    device=device1)
+
                 self.mock_fanout.reset_mock()
-                # NOTE(yamamoto): see bug #1441488
-                self.adminContext.session.expire_all()
-                self.callbacks.get_device_details(
-                    self.adminContext,
-                    device=device1,
-                    agent_id=HOST_2)
+                self._update_and_check_portbinding(p1['id'], HOST_2)
                 p1_ips = [p['ip_address'] for p in p1['fixed_ips']]
                 expected = {p1['network_id']:
                             {'ports':
-                             {'20.0.0.1': [constants.FLOODING_ENTRY,
-                                           l2pop_rpc.PortInfo(
-                                               p1['mac_address'],
-                                               p1_ips[0])]},
+                             {tunnel_ip: [constants.FLOODING_ENTRY,
+                                          l2pop_rpc.PortInfo(
+                                              p1['mac_address'],
+                                              p1_ips[0])]},
                              'network_type': 'vxlan',
                              'segment_id': 1}}
 

@@ -65,9 +65,9 @@ DHCP_OPTS = [
                help=_('Location to store DHCP server config files')),
     cfg.StrOpt('dhcp_domain',
                default='openstacklocal',
-               help=_('Domain to use for building the hostnames.'
+               help=_('Domain to use for building the hostnames. '
                       'This option is deprecated. It has been moved to '
-                      'neutron.conf as dns_domain. It will removed from here '
+                      'neutron.conf as dns_domain. It will be removed '
                       'in a future release'),
                deprecated_for_removal=True),
 ]
@@ -85,7 +85,7 @@ DNSMASQ_OPTS = [
                       "The log contains DHCP and DNS log information and "
                       "is useful for debugging issues with either DHCP or "
                       "DNS. If this section is null, disable dnsmasq log.")),
-    cfg.BoolOpt('dnsmasq_local_resolv', default=True,
+    cfg.BoolOpt('dnsmasq_local_resolv', default=False,
                 help=_("Enables the dnsmasq service to provide name "
                        "resolution for instances via DNS resolvers on the "
                        "host running the DHCP agent. Effectively removes the "

@@ -224,7 +224,7 @@ class SGServerRpcCallBackTestCase(test_sg.SecurityGroupDBTestCase):
                                          rule2['security_group_rule']]}
             res = self._create_security_group_rule(self.fmt, rules)
             self.deserialize(self.fmt, res)
-            self.assertEqual(res.status_int, webob.exc.HTTPCreated.code)
+            self.assertEqual(webob.exc.HTTPCreated.code, res.status_int)
 
             res1 = self._create_port(
                 self.fmt, n['network']['id'],
@@ -396,7 +396,7 @@ class SGServerRpcCallBackTestCase(test_sg.SecurityGroupDBTestCase):
                                          rule2['security_group_rule']]}
             res = self._create_security_group_rule(self.fmt, rules)
             self.deserialize(self.fmt, res)
-            self.assertEqual(res.status_int, webob.exc.HTTPCreated.code)
+            self.assertEqual(webob.exc.HTTPCreated.code, res.status_int)
 
             res1 = self._create_port(
                 self.fmt, n['network']['id'],
@@ -446,7 +446,7 @@ class SGServerRpcCallBackTestCase(test_sg.SecurityGroupDBTestCase):
                 'security_group_rules': [rule1['security_group_rule']]}
             res = self._create_security_group_rule(self.fmt, rules)
             self.deserialize(self.fmt, res)
-            self.assertEqual(res.status_int, webob.exc.HTTPCreated.code)
+            self.assertEqual(webob.exc.HTTPCreated.code, res.status_int)
 
             res1 = self._create_port(
                 self.fmt, n['network']['id'],
@@ -567,7 +567,7 @@ class SGServerRpcCallBackTestCase(test_sg.SecurityGroupDBTestCase):
                                          rule2['security_group_rule']]}
             res = self._create_security_group_rule(self.fmt, rules)
             self.deserialize(self.fmt, res)
-            self.assertEqual(res.status_int, webob.exc.HTTPCreated.code)
+            self.assertEqual(webob.exc.HTTPCreated.code, res.status_int)
 
             dhcp_port = self._create_port(
                 self.fmt, n['network']['id'],
@@ -612,7 +612,7 @@ class SGServerRpcCallBackTestCase(test_sg.SecurityGroupDBTestCase):
                          'port_range_min': 23,
                          'source_ip_prefix': fake_prefix},
                         {'direction': 'ingress',
-                         'protocol': const.PROTO_NAME_ICMP_V6,
+                         'protocol': const.PROTO_NAME_IPV6_ICMP,
                          'ethertype': const.IPv6,
                          'source_ip_prefix': fake_gateway,
                          'source_port_range_min': const.ICMPV6_TYPE_RA},
@@ -727,7 +727,7 @@ class SGServerRpcCallBackTestCase(test_sg.SecurityGroupDBTestCase):
                          'security_group_id': sg1_id,
                          'port_range_min': 22},
                         {'direction': 'ingress',
-                         'protocol': const.PROTO_NAME_ICMP_V6,
+                         'protocol': const.PROTO_NAME_IPV6_ICMP,
                          'ethertype': const.IPv6,
                          'source_ip_prefix': gateway_lla_ip,
                          'source_port_range_min': const.ICMPV6_TYPE_RA},
@@ -801,7 +801,7 @@ class SGServerRpcCallBackTestCase(test_sg.SecurityGroupDBTestCase):
                          'security_group_id': sg1_id,
                          'port_range_min': 22},
                         {'direction': 'ingress',
-                         'protocol': const.PROTO_NAME_ICMP_V6,
+                         'protocol': const.PROTO_NAME_IPV6_ICMP,
                          'ethertype': const.IPv6,
                          'source_ip_prefix': gateway_lla_ip,
                          'source_port_range_min': const.ICMPV6_TYPE_RA},
@@ -870,7 +870,7 @@ class SGServerRpcCallBackTestCase(test_sg.SecurityGroupDBTestCase):
                          'security_group_id': sg1_id,
                          'port_range_min': 22},
                         {'direction': 'ingress',
-                         'protocol': const.PROTO_NAME_ICMP_V6,
+                         'protocol': const.PROTO_NAME_IPV6_ICMP,
                          'ethertype': const.IPv6,
                          'source_ip_prefix': gateway_lla_ip,
                          'source_port_range_min': const.ICMPV6_TYPE_RA},
@@ -926,7 +926,7 @@ class SGServerRpcCallBackTestCase(test_sg.SecurityGroupDBTestCase):
                          'security_group_id': sg1_id,
                          'port_range_min': 22},
                         {'direction': 'ingress',
-                         'protocol': const.PROTO_NAME_ICMP_V6,
+                         'protocol': const.PROTO_NAME_IPV6_ICMP,
                          'ethertype': const.IPv6,
                          'source_ip_prefix': fake_gateway,
                          'source_port_range_min': const.ICMPV6_TYPE_RA},
@@ -1032,7 +1032,7 @@ class SGServerRpcCallBackTestCase(test_sg.SecurityGroupDBTestCase):
                          'port_range_min': 23,
                          'dest_ip_prefix': fake_prefix},
                         {'direction': 'ingress',
-                         'protocol': const.PROTO_NAME_ICMP_V6,
+                         'protocol': const.PROTO_NAME_IPV6_ICMP,
                          'ethertype': const.IPv6,
                          'source_ip_prefix': fake_gateway,
                          'source_port_range_min': const.ICMPV6_TYPE_RA},
@@ -1097,7 +1097,7 @@ class SGServerRpcCallBackTestCase(test_sg.SecurityGroupDBTestCase):
                          'remote_group_id': sg2_id,
                          'security_group_id': sg1_id},
                         {'direction': 'ingress',
-                         'protocol': const.PROTO_NAME_ICMP_V6,
+                         'protocol': const.PROTO_NAME_IPV6_ICMP,
                          'ethertype': const.IPv6,
                          'source_ip_prefix': fake_gateway,
                          'source_port_range_min': const.ICMPV6_TYPE_RA},

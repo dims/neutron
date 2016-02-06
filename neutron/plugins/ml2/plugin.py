@@ -284,6 +284,10 @@ class Ml2Plugin(db_base_plugin_v2.NeutronDbPluginV2,
             binding.vif_details = ''
             db.clear_binding_levels(session, port_id, original_host)
             mech_context._clear_binding_levels()
+            port['status'] = const.PORT_STATUS_DOWN
+            super(Ml2Plugin, self).update_port(
+                mech_context._plugin_context, port_id,
+                {attributes.PORT: {'status': const.PORT_STATUS_DOWN}})
 
         if port['device_owner'] == const.DEVICE_OWNER_DVR_INTERFACE:
             binding.vif_type = portbindings.VIF_TYPE_UNBOUND
@@ -1353,12 +1357,9 @@ class Ml2Plugin(db_base_plugin_v2.NeutronDbPluginV2,
     def delete_port(self, context, id, l3_port_check=True):
         self._pre_delete_port(context, id, l3_port_check)
         # TODO(armax): get rid of the l3 dependency in the with block
-        removed_routers = []
         router_ids = []
         l3plugin = manager.NeutronManager.get_service_plugins().get(
             service_constants.L3_ROUTER_NAT)
-        is_dvr_enabled = utils.is_extension_supported(
-            l3plugin, const.L3_DISTRIBUTED_EXT_ALIAS)
 
         session = context.session
         with session.begin(subtransactions=True):
@@ -1385,9 +1386,6 @@ class Ml2Plugin(db_base_plugin_v2.NeutronDbPluginV2,
                                                binding.host)
                 mech_context = driver_context.PortContext(
                     self, context, port, network, binding, levels)
-                if is_dvr_enabled and utils.is_dvr_serviced(device_owner):
-                    removed_routers = l3plugin.get_dvr_routers_to_remove(
-                        context, id)
                 self.mechanism_manager.delete_port_precommit(mech_context)
                 bound_mech_contexts.append(mech_context)
             if l3plugin:
@@ -1399,15 +1397,14 @@ class Ml2Plugin(db_base_plugin_v2.NeutronDbPluginV2,
             super(Ml2Plugin, self).delete_port(context, id)
 
         self._post_delete_port(
-            context, port, router_ids, removed_routers, bound_mech_contexts)
+            context, port, router_ids, bound_mech_contexts)
 
     def _post_delete_port(
-        self, context, port, router_ids, removed_routers, bound_mech_contexts):
+        self, context, port, router_ids, bound_mech_contexts):
         kwargs = {
             'context': context,
             'port': port,
             'router_ids': router_ids,
-            'removed_routers': removed_routers
         }
         registry.notify(resources.PORT, events.AFTER_DELETE, self, **kwargs)
         try:

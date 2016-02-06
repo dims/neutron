@@ -27,9 +27,9 @@ from neutron.callbacks import resources
 from neutron.common import constants as l3_const
 from neutron.common import exceptions as n_exc
 from neutron.common import utils as n_utils
+from neutron.db import l3_agentschedulers_db as l3_sched_db
 from neutron.db import l3_attrs_db
 from neutron.db import l3_db
-from neutron.db import l3_dvrscheduler_db as l3_dvrsched_db
 from neutron.extensions import l3
 from neutron.extensions import portbindings
 from neutron import manager
@@ -371,15 +371,15 @@ class L3_NAT_with_dvr_db_mixin(l3_db.L3_NAT_db_mixin,
         if removed_hosts:
             agents = plugin.get_l3_agents(context,
                                           filters={'host': removed_hosts})
-            binding_table = l3_dvrsched_db.CentralizedSnatL3AgentBinding
+            binding_table = l3_sched_db.RouterL3AgentBinding
             snat_binding = context.session.query(binding_table).filter_by(
                 router_id=router_id).first()
             for agent in agents:
                 is_this_snat_agent = (
                     snat_binding and snat_binding.l3_agent_id == agent['id'])
                 if not is_this_snat_agent:
-                    plugin.remove_router_from_l3_agent(
-                        context, agent['id'], router_id)
+                    self.l3_rpc_notifier.router_removed_from_agent(
+                        context, router_id, agent['host'])
 
         is_multiple_prefix_csport = (
             self._check_for_multiprefix_csnat_port_and_update(
@@ -414,7 +414,7 @@ class L3_NAT_with_dvr_db_mixin(l3_db.L3_NAT_db_mixin,
         if not routers:
             return []
         router_ids = [r['id'] for r in routers]
-        snat_binding = l3_dvrsched_db.CentralizedSnatL3AgentBinding
+        snat_binding = l3_sched_db.RouterL3AgentBinding
         query = (context.session.query(snat_binding).
                  filter(snat_binding.router_id.in_(router_ids))).all()
         bindings = dict((b.router_id, b) for b in query)
@@ -674,15 +674,13 @@ class L3_NAT_with_dvr_db_mixin(l3_db.L3_NAT_db_mixin,
         filters = {'fixed_ips': {'subnet_id': [subnet]},
                    'device_owner': [l3_const.DEVICE_OWNER_DVR_INTERFACE]}
         ports = self._core_plugin.get_ports(context, filters=filters)
-        for port in ports:
-            router_id = port['device_id']
-            router_dict = self._get_router(context, router_id)
-            if router_dict.extra_attributes.distributed:
-                arp_table = {'ip_address': ip_address,
-                             'mac_address': mac_address,
-                             'subnet_id': subnet}
-                notifier(context, router_id, arp_table)
-                return
+        router_id = next((port['device_id'] for port in ports), None)
+        if not router_id:
+            return
+        arp_table = {'ip_address': ip_address,
+                     'mac_address': mac_address,
+                     'subnet_id': subnet}
+        notifier(context, router_id, arp_table)
 
     def _should_update_arp_entry_for_dvr_service_port(self, port_dict):
         # Check this is a valid VM or service port
