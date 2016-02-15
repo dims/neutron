@@ -463,8 +463,9 @@ class L3NatTestCaseMixin(object):
 
     @contextlib.contextmanager
     def floatingip_with_assoc(self, port_id=None, fmt=None, fixed_ip=None,
-                              set_context=False, tenant_id=None):
-        with self.subnet(cidr='11.0.0.0/24',
+                              public_cidr='11.0.0.0/24', set_context=False,
+                              tenant_id=None):
+        with self.subnet(cidr=public_cidr,
                          set_context=set_context,
                          tenant_id=tenant_id) as public_sub:
             self._set_net_external(public_sub['subnet']['network_id'])
@@ -1616,6 +1617,30 @@ class L3NatTestCaseBase(L3NatTestCaseMixin):
                 body = self._show('routers', r['router']['id'])
                 gw_info = body['router']['external_gateway_info']
                 self.assertIsNone(gw_info)
+
+    def test_router_add_gateway_no_subnet_forbidden(self):
+        with self.router() as r:
+            with self.network() as n:
+                self._set_net_external(n['network']['id'])
+                with mock.patch.object(registry, 'notify') as notify:
+                    errors = [
+                        exceptions.NotificationError(
+                            'foo_callback_id',
+                            n_exc.InvalidInput(error_message='forbidden')),
+                    ]
+                    notify.side_effect = exceptions.CallbackFailure(
+                        errors=errors)
+                    self._add_external_gateway_to_router(
+                        r['router']['id'], n['network']['id'],
+                        expected_code=exc.HTTPBadRequest.code)
+                    notify.assert_called_once_with(
+                        resources.ROUTER_GATEWAY,
+                        events.BEFORE_CREATE,
+                        mock.ANY,
+                        context=mock.ANY,
+                        router_id=r['router']['id'],
+                        network_id=n['network']['id'],
+                        subnets=[])
 
     def test_router_remove_interface_inuse_returns_409(self):
         with self.router() as r:
@@ -2966,8 +2991,8 @@ class L3NatDBIntAgentSchedulingTestCase(L3BaseForIntTests,
             helpers.register_l3_agent(
                 host='host2', internal_only=False,
                 ext_net_id=s2['subnet']['network_id'])
-            l3_rpc_cb.sync_routers(self.adminContext,
-                                   host='host1')
+            l3_rpc_cb.get_router_ids(self.adminContext,
+                                     host='host1')
             self._assert_router_on_agent(r['router']['id'], 'host1')
 
             self._add_external_gateway_to_router(
@@ -2991,8 +3016,8 @@ class L3NatDBIntAgentSchedulingTestCase(L3BaseForIntTests,
             helpers.register_l3_agent(
                 host='host2', internal_only=False,
                 ext_net_id='', ext_bridge='')
-            l3_rpc_cb.sync_routers(self.adminContext,
-                                   host='host1')
+            l3_rpc_cb.get_router_ids(self.adminContext,
+                                     host='host1')
             self._assert_router_on_agent(r['router']['id'], 'host1')
 
             self._add_external_gateway_to_router(

@@ -75,10 +75,36 @@ Inclusion Criteria
 
 As mentioned before, the Neutron PTL must approve the inclusion of each
 additional repository under the Neutron project.  That evaluation will be
-primarily based on the new project requirements used for all new OpenStack
-projects for the criteria that is applicable:
+initially based on the new project requirements used for all new OpenStack
+projects for the criteria that is applicable.  If there's any question about
+this, the review should be deferred to the TC as a new OpenStack project team.
 
     http://governance.openstack.org/reference/new-projects-requirements.html
+
+Including *everything* related to Neutron under the Neutron project team has not
+scaled well, so some Neutron related projects are encouraged to form a new
+OpenStack project team.  The following list of guidelines are not hard rules.
+There may be exceptions.  Instead, they serve as criteria that may influence the
+decision one way or the other.
+
+These criteria are designed around how easy it would be for members of the
+loosely defined "Neutron team" to jump in and help fix or even take over a given
+repository if needed.
+
+* Neutron stays quite busy developing and maintaining open source
+  implementations for features.  Any sub-project that serves as an interface to
+  proprietary technology should most likely be a separate project team.  This
+  imposes a barrier on access to the technology for dev/test and CI integration.
+* If the project only interacts with Neutron on REST API boundaries (client of
+  Neutron's API, or Neutron is a client of its API), it should probably be a
+  separate project.  python-neutronclient is an obvious exception here.
+* The area of functionality of a sub-project should be taken into consideration.
+  The closer the functionality is to the base functionality implemented in
+  openstack/neutron, the more likely it makes sense under the Neutron project
+  team.  Conversely, something "higher" in the stack considered an optional
+  advanced service is more likely to make sense as an independent project.
+  This is subject to change as the Neutron project evolves and continues to
+  explore the boundaries that work best for the project.
 
 Official Sub-Project List
 -------------------------
@@ -106,6 +132,7 @@ Functionality legend
 - l3: a Layer 3 service plugin;
 - lb: a Load Balancer service plugin;
 - ml2: an ML2 mechanism driver;
+- pd: prefix delegation
 - sfc; traffic steering based on traffic classification
 - vpn: a VPN service plugin;
 
@@ -120,25 +147,11 @@ functionality.
 +===============================+=======================+
 | dragonflow_                   | core                  |
 +-------------------------------+-----------------------+
-| kuryr_                        | docker                |
-+-------------------------------+-----------------------+
-| networking-ale-omniswitch_    | ml2                   |
-+-------------------------------+-----------------------+
-| networking-arista_            | ml2,l3                |
-+-------------------------------+-----------------------+
 | networking-bagpipe_           | ml2                   |
 +-------------------------------+-----------------------+
 | networking-bgpvpn_            | vpn                   |
 +-------------------------------+-----------------------+
 | networking-calico_            | ml2                   |
-+-------------------------------+-----------------------+
-| networking-cisco_             | core,ml2,l3,fw,vpn    |
-+-------------------------------+-----------------------+
-| networking-fujitsu_           | ml2                   |
-+-------------------------------+-----------------------+
-| networking-hyperv_            | ml2                   |
-+-------------------------------+-----------------------+
-| networking-infoblox_          | ipam                  |
 +-------------------------------+-----------------------+
 | networking-l2gw_              | l2                    |
 +-------------------------------+-----------------------+
@@ -152,19 +165,13 @@ functionality.
 +-------------------------------+-----------------------+
 | networking-ovn_               | core                  |
 +-------------------------------+-----------------------+
-| networking-plumgrid_          | core                  |
-+-------------------------------+-----------------------+
-| networking-powervm_           | ml2                   |
-+-------------------------------+-----------------------+
 | networking-sfc_               | sfc                   |
-+-------------------------------+-----------------------+
-| networking-vsphere_           | ml2                   |
 +-------------------------------+-----------------------+
 | neutron_                      | base,l2,ml2,core,l3   |
 +-------------------------------+-----------------------+
-| neutron-lbaas_                | lb                    |
-+-------------------------------+-----------------------+
-| neutron-lbaas-dashboard_      | dashboard             |
+| neutron-lbaas_                | lb,dashboard          |
+| neutron-lbaas-dashboard_      |                       |
+| octavia_                      |                       |
 +-------------------------------+-----------------------+
 | neutron-fwaas_                | fw                    |
 +-------------------------------+-----------------------+
@@ -172,11 +179,9 @@ functionality.
 +-------------------------------+-----------------------+
 | neutron-vpnaas_               | vpn                   |
 +-------------------------------+-----------------------+
-| octavia_                      | lb                    |
-+-------------------------------+-----------------------+
 | python-neutronclient_         | client                |
 +-------------------------------+-----------------------+
-| vmware-nsx_                   | core                  |
+| python-neutron-pd-driver_     | pd                    |
 +-------------------------------+-----------------------+
 
 
@@ -190,20 +195,74 @@ capabilities of Neutron, the Neutron API, or a combination of both.
 +-------------------------------+-----------------------+
 | Name                          |    Functionality      |
 +===============================+=======================+
+| kuryr_                        | docker                |
++-------------------------------+-----------------------+
+| networking-ale-omniswitch_    | ml2                   |
++-------------------------------+-----------------------+
+| networking-arista_            | ml2,l3                |
++-------------------------------+-----------------------+
 | networking-bigswitch_         | ml2,core,l3           |
 +-------------------------------+-----------------------+
 | networking-brocade_           | ml2,l3                |
 +-------------------------------+-----------------------+
+| networking-cisco_             | core,ml2,l3,fw,vpn    |
++-------------------------------+-----------------------+
 | networking-edge-vpn_          | vpn                   |
++-------------------------------+-----------------------+
+| networking-fujitsu_           | ml2                   |
++-------------------------------+-----------------------+
+| networking-hyperv_            | ml2                   |
++-------------------------------+-----------------------+
+| networking-infoblox_          | ipam                  |
 +-------------------------------+-----------------------+
 | networking-mlnx_              | ml2                   |
 +-------------------------------+-----------------------+
 | networking-nec_               | core                  |
 +-------------------------------+-----------------------+
+| networking-plumgrid_          | core                  |
++-------------------------------+-----------------------+
+| networking-powervm_           | ml2                   |
++-------------------------------+-----------------------+
 | nuage-openstack-neutron_      | core                  |
 +-------------------------------+-----------------------+
 | networking-ovs-dpdk_          | ml2                   |
 +-------------------------------+-----------------------+
+| networking-vsphere_           | ml2                   |
++-------------------------------+-----------------------+
+| vmware-nsx_                   | core                  |
++-------------------------------+-----------------------+
+
+Project Teams FAQ
+~~~~~~~~~~~~~~~~~
+
+**Q: What does a sub-project gain as a part of the Neutron project team?**
+
+A project under Neutron is no more an official part of OpenStack than another
+OpenStack project team.  Projects under Neutron share some resources.  In
+particular, they get managed backports, managed releases, managed CVEs, RFEs,
+bugs, docs and everything that pertain the SDLC of the Neutron end-to-end
+project.
+
+**Q: Why is kuryr a separate project?**
+
+Kuryr was started and incubated within the Neutron team.  However, it interfaces
+with Neutron as a client of the Neutron API, so it makes sense to stand as an
+independent project.
+
+**Q: Why are several "advanced service" projects still included under Neutron?**
+
+neutron-lbaas, neutron-fwaas, and neutron-vpnaas are all included under the
+Neutron project team largely for historical reasons.  They were originally a
+part of neutron itself and are still a part of the neutron deliverable in terms
+of OpenStack governance.  Because of the deliverable inclusion, they should really
+only be considered for a move on a release boundary.
+
+**Q: Why is Octavia included under Neutron?**
+
+neutron-lbaas, neutron-lbaas-dashboard, and Octavia are all considered a unit.
+If we split one, we need to split them together.  We can't split these yet, as
+they are a part of the official "neutron" deliverable.  This needs to be done on
+a release boundary when the lbaas team is ready to do so.
 
 .. _networking-ale-omniswitch:
 
@@ -374,6 +433,13 @@ Neutron Client
 
 * Git: https://git.openstack.org/cgit/openstack/python-neutronclient
 * Launchpad: https://launchpad.net/python-neutronclient
+
+.. _python-neutron-pd-driver:
+
+Neutron Prefix Delegation
++++++++++++++++++++++++++
+
+* Git: https://git.openstack.org/cgit/openstack/python-neutron-pd-driver
 
 .. _neutron-fwaas:
 

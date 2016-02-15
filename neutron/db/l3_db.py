@@ -391,6 +391,16 @@ class L3_NAT_dbonly_mixin(l3.RouterPluginBase):
         if new_valid_gw_port_attachment:
             subnets = self._core_plugin.get_subnets_by_network(context,
                                                                new_network_id)
+            try:
+                kwargs = {'context': context, 'router_id': router_id,
+                          'network_id': new_network_id, 'subnets': subnets}
+                registry.notify(
+                    resources.ROUTER_GATEWAY, events.BEFORE_CREATE, self,
+                    **kwargs)
+            except exceptions.CallbackFailure as e:
+                # raise the underlying exception
+                raise e.errors[0].error
+
             for subnet in subnets:
                 self._check_for_dup_router_subnet(context, router,
                                                   new_network_id, subnet['id'],
@@ -1414,7 +1424,18 @@ class L3_NAT_dbonly_mixin(l3.RouterPluginBase):
             subnets_by_network[subnet['network_id']].append(subnet)
         return subnets_by_network
 
-    def _populate_subnets_for_ports(self, context, ports):
+    def _get_mtus_by_network_list(self, context, network_ids):
+        if not network_ids:
+            return {}
+        filters = {'network_id': network_ids}
+        fields = ['id', 'mtu']
+        networks = self._core_plugin.get_networks(context, filters=filters,
+                                                  fields=fields)
+        mtus_by_network = dict((network['id'], network.get('mtu', 0))
+                               for network in networks)
+        return mtus_by_network
+
+    def _populate_mtu_and_subnets_for_ports(self, context, ports):
         """Populate ports with subnets.
 
         These ports already have fixed_ips populated.
@@ -1422,6 +1443,7 @@ class L3_NAT_dbonly_mixin(l3.RouterPluginBase):
         network_ids = [p['network_id']
                        for p in self._each_port_having_fixed_ips(ports)]
 
+        mtus_by_network = self._get_mtus_by_network_list(context, network_ids)
         subnets_by_network = self._get_subnets_by_network_list(
             context, network_ids)
 
@@ -1459,6 +1481,7 @@ class L3_NAT_dbonly_mixin(l3.RouterPluginBase):
                     port['extra_subnets'].append(subnet_info)
 
             port['address_scopes'].update(scopes)
+            port['mtu'] = mtus_by_network.get(port['network_id'], 0)
 
     def _process_floating_ips(self, context, routers_dict, floating_ips):
         for floating_ip in floating_ips:
@@ -1495,7 +1518,7 @@ class L3_NAT_dbonly_mixin(l3.RouterPluginBase):
             context, router_ids=router_ids, active=active)
         ports_to_populate = [router['gw_port'] for router in routers
                              if router.get('gw_port')] + interfaces
-        self._populate_subnets_for_ports(context, ports_to_populate)
+        self._populate_mtu_and_subnets_for_ports(context, ports_to_populate)
         routers_dict = dict((router['id'], router) for router in routers)
         self._process_floating_ips(context, routers_dict, floating_ips)
         self._process_interfaces(routers_dict, interfaces)

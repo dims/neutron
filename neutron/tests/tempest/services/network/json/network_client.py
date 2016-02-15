@@ -48,14 +48,12 @@ class NetworkClientJSON(service_client.ServiceClient):
         # the following map is used to construct proper URI
         # for the given neutron resource
         service_resource_prefix_map = {
+            'bgp-peers': '',
+            'bgp-speakers': '',
             'networks': '',
             'subnets': '',
             'subnetpools': '',
             'ports': '',
-            'ipsecpolicies': 'vpn',
-            'vpnservices': 'vpn',
-            'ikepolicies': 'vpn',
-            'ipsec-site-connections': 'vpn',
             'metering_labels': 'metering',
             'metering_label_rules': 'metering',
             'firewall_rules': 'fw',
@@ -85,9 +83,6 @@ class NetworkClientJSON(service_client.ServiceClient):
         resource_plural_map = {
             'security_groups': 'security_groups',
             'security_group_rules': 'security_group_rules',
-            'ipsecpolicy': 'ipsecpolicies',
-            'ikepolicy': 'ikepolicies',
-            'ipsec_site_connection': 'ipsec-site-connections',
             'quotas': 'quotas',
             'firewall_policy': 'firewall_policies',
             'qos_policy': 'policies',
@@ -169,6 +164,159 @@ class NetworkClientJSON(service_client.ServiceClient):
             if name[:prefix_len] == prefix:
                 return method_functors[index](name[prefix_len:])
         raise AttributeError(name)
+
+    # Subnetpool methods
+    def create_subnetpool(self, name, **kwargs):
+        subnetpool_data = {'name': name}
+        for arg in kwargs:
+           subnetpool_data[arg] = kwargs[arg]
+
+        post_data = {'subnetpool': subnetpool_data}
+        body = self.serialize_list(post_data, "subnetpools", "subnetpool")
+        uri = self.get_uri("subnetpools")
+        resp, body = self.post(uri, body)
+        body = {'subnetpool': self.deserialize_list(body)}
+        self.expected_success(201, resp.status)
+        return service_client.ResponseBody(resp, body)
+
+    def get_subnetpool(self, id):
+        uri = self.get_uri("subnetpools")
+        subnetpool_uri = '%s/%s' % (uri, id)
+        resp, body = self.get(subnetpool_uri)
+        body = {'subnetpool': self.deserialize_list(body)}
+        self.expected_success(200, resp.status)
+        return service_client.ResponseBody(resp, body)
+
+    def delete_subnetpool(self, id):
+        uri = self.get_uri("subnetpools")
+        subnetpool_uri = '%s/%s' % (uri, id)
+        resp, body = self.delete(subnetpool_uri)
+        self.expected_success(204, resp.status)
+        return service_client.ResponseBody(resp, body)
+
+    def list_subnetpools(self):
+        uri = self.get_uri("subnetpools")
+        resp, body = self.get(uri)
+        body = {'subnetpools': self.deserialize_list(body)}
+        self.expected_success(200, resp.status)
+        return service_client.ResponseBody(resp, body)
+
+    def update_subnetpool(self, id, **kwargs):
+        subnetpool_data = {}
+        for arg in kwargs:
+           subnetpool_data[arg] = kwargs[arg]
+
+        post_data = {'subnetpool': subnetpool_data}
+        body = self.serialize_list(post_data, "subnetpools", "subnetpool")
+        uri = self.get_uri("subnetpools")
+        subnetpool_uri = '%s/%s' % (uri, id)
+        resp, body = self.put(subnetpool_uri, body)
+        body = {'subnetpool': self.deserialize_list(body)}
+        self.expected_success(200, resp.status)
+        return service_client.ResponseBody(resp, body)
+
+    # BGP speaker methods
+    def create_bgp_speaker(self, post_data):
+        body = self.serialize_list(post_data, "bgp-speakers", "bgp-speaker")
+        uri = self.get_uri("bgp-speakers")
+        resp, body = self.post(uri, body)
+        body = {'bgp-speaker': self.deserialize_list(body)}
+        self.expected_success(201, resp.status)
+        return service_client.ResponseBody(resp, body)
+
+    def get_bgp_speaker(self, id):
+        uri = self.get_uri("bgp-speakers")
+        bgp_speaker_uri = '%s/%s' % (uri, id)
+        resp, body = self.get(bgp_speaker_uri)
+        body = {'bgp-speaker': self.deserialize_list(body)}
+        self.expected_success(200, resp.status)
+        return service_client.ResponseBody(resp, body)
+
+    def get_bgp_speakers(self):
+        uri = self.get_uri("bgp-speakers")
+        resp, body = self.get(uri)
+        body = {'bgp-speakers': self.deserialize_list(body)}
+        self.expected_success(200, resp.status)
+        return service_client.ResponseBody(resp, body)
+
+    def update_bgp_speaker(self, id, put_data):
+        body = self.serialize_list(put_data, "bgp-speakers", "bgp-speaker")
+        uri = self.get_uri("bgp-speakers")
+        bgp_speaker_uri = '%s/%s' % (uri, id)
+        resp, body = self.put(bgp_speaker_uri, body)
+        body = {'bgp-speaker': self.deserialize_list(body)}
+        self.expected_success(200, resp.status)
+        return service_client.ResponseBody(resp, body)
+
+    def delete_bgp_speaker(self, id):
+        uri = self.get_uri("bgp-speakers")
+        bgp_speaker_uri = '%s/%s' % (uri, id)
+        resp, body = self.delete(bgp_speaker_uri)
+        self.expected_success(204, resp.status)
+        return service_client.ResponseBody(resp, body)
+
+    def create_bgp_peer(self, post_data):
+        body = self.serialize_list(post_data, "bgp-peers", "bgp-peer")
+        uri = self.get_uri("bgp-peers")
+        resp, body = self.post(uri, body)
+        body = {'bgp-peer': self.deserialize_list(body)}
+        self.expected_success(201, resp.status)
+        return service_client.ResponseBody(resp, body)
+
+    def get_bgp_peer(self, id):
+        uri = self.get_uri("bgp-peers")
+        bgp_speaker_uri = '%s/%s' % (uri, id)
+        resp, body = self.get(bgp_speaker_uri)
+        body = {'bgp-peer': self.deserialize_list(body)}
+        self.expected_success(200, resp.status)
+        return service_client.ResponseBody(resp, body)
+
+    def delete_bgp_peer(self, id):
+        uri = self.get_uri("bgp-peers")
+        bgp_speaker_uri = '%s/%s' % (uri, id)
+        resp, body = self.delete(bgp_speaker_uri)
+        self.expected_success(204, resp.status)
+        return service_client.ResponseBody(resp, body)
+
+    def add_bgp_peer_with_id(self, bgp_speaker_id, bgp_peer_id):
+        uri = '%s/bgp-speakers/%s/add_bgp_peer' % (self.uri_prefix,
+                                                   bgp_speaker_id)
+        update_body = {"bgp_peer_id": bgp_peer_id}
+        update_body = json.dumps(update_body)
+        resp, body = self.put(uri, update_body)
+        self.expected_success(200, resp.status)
+        body = json.loads(body)
+        return service_client.ResponseBody(resp, body)
+
+    def remove_bgp_peer_with_id(self, bgp_speaker_id, bgp_peer_id):
+        uri = '%s/bgp-speakers/%s/remove_bgp_peer' % (self.uri_prefix,
+                                                      bgp_speaker_id)
+        update_body = {"bgp_peer_id": bgp_peer_id}
+        update_body = json.dumps(update_body)
+        resp, body = self.put(uri, update_body)
+        self.expected_success(200, resp.status)
+        body = json.loads(body)
+        return service_client.ResponseBody(resp, body)
+
+    def add_bgp_gateway_network(self, bgp_speaker_id, network_id):
+        uri = '%s/bgp-speakers/%s/add_gateway_network' % (self.uri_prefix,
+                                                        bgp_speaker_id)
+        update_body = {"network_id": network_id}
+        update_body = json.dumps(update_body)
+        resp, body = self.put(uri, update_body)
+        self.expected_success(200, resp.status)
+        body = json.loads(body)
+        return service_client.ResponseBody(resp, body)
+
+    def remove_bgp_gateway_network(self, bgp_speaker_id, network_id):
+        uri = '%s/bgp-speakers/%s/remove_gateway_network'
+        uri = uri % (self.uri_prefix, bgp_speaker_id)
+        update_body = {"network_id": network_id}
+        update_body = json.dumps(update_body)
+        resp, body = self.put(uri, update_body)
+        self.expected_success(200, resp.status)
+        body = json.loads(body)
+        return service_client.ResponseBody(resp, body)
 
     # Common methods that are hard to automate
     def create_bulk_network(self, names, shared=False):
@@ -419,21 +567,6 @@ class NetworkClientJSON(service_client.ServiceClient):
                                                  network_id)
         resp, body = self.delete(uri)
         self.expected_success(204, resp.status)
-        return service_client.ResponseBody(resp, body)
-
-    def create_ikepolicy(self, name, **kwargs):
-        post_body = {
-            "ikepolicy": {
-                "name": name,
-            }
-        }
-        for key, val in kwargs.items():
-            post_body['ikepolicy'][key] = val
-        body = json.dumps(post_body)
-        uri = '%s/vpn/ikepolicies' % (self.uri_prefix)
-        resp, body = self.post(uri, body)
-        self.expected_success(201, resp.status)
-        body = json.loads(body)
         return service_client.ResponseBody(resp, body)
 
     def update_extra_routes(self, router_id, nexthop, destination):
