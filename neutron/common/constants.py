@@ -42,11 +42,15 @@ MINIMUM_AGENTS_FOR_HA = 2
 HA_ROUTER_STATE_ACTIVE = 'active'
 HA_ROUTER_STATE_STANDBY = 'standby'
 
+AGENT_TYPE_MACVTAP = 'Macvtap agent'
 PAGINATION_INFINITE = 'infinite'
 
 SORT_DIRECTION_ASC = 'asc'
 SORT_DIRECTION_DESC = 'desc'
 
+ETHERTYPE_NAME_ARP = 'arp'
+ETHERTYPE_ARP = 0x0806
+ETHERTYPE_IP = 0x0800
 ETHERTYPE_IPV6 = 0x86DD
 
 # Protocol names and numbers for Security Groups/Firewalls
@@ -121,10 +125,11 @@ IP_PROTOCOL_MAP = {PROTO_NAME_AH: PROTO_NUM_AH,
 # Multicast Listener Report (131),
 # Multicast Listener Done (132),
 # Neighbor Solicitation (135),
+ICMPV6_TYPE_NC = 135
 # Neighbor Advertisement (136)
+ICMPV6_TYPE_NA = 136
 ICMPV6_ALLOWED_TYPES = [130, 131, 132, 135, 136]
 ICMPV6_TYPE_RA = 134
-ICMPV6_TYPE_NA = 136
 
 DHCPV6_STATEFUL = 'dhcpv6-stateful'
 DHCPV6_STATELESS = 'dhcpv6-stateless'
