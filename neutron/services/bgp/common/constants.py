@@ -14,3 +14,7 @@
 # under the License.
 
 AGENT_TYPE_BGP_ROUTING = 'BGP dynamic routing agent'
+
+BGP_DRAGENT = 'bgp_dragent'
+
+BGP_PLUGIN = 'q-bgp-plugin'

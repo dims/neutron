@@ -21,11 +21,42 @@
       (Avoid deeper levels because they do not render well.)
 
 
-Official Sub-Projects
-=====================
+Neutron Stadium
+===============
 
-Neutron has a set of official sub-projects.  These projects are recognized as a
-part of the overall Neutron project.
+Introduction
+------------
+
+Neutron has grown to be a complex project made of many moving parts. The
+codebase is the aggregation of smaller projects that, once assembled in a
+specific configuration, implement one of the many deployment architectures
+to deliver networking services.
+
+This document explains the inclusion process, and the criteria chosen to
+select a project for inclusion. It also outlines the lists of projects
+that are either managed by the `Neutron teams <http://docs.openstack.org/developer/neutron/policies/neutron-teams.html#neutron-teams>`_,
+or that are affiliated to Neutron via an integration point made available
+by the core pluggable framework.
+
+Demystifying the mission
+------------------------
+
+The Neutron `mission <http://governance.openstack.org/reference/projects/neutron.html#mission>`_
+states that Neutron is all about delivering network services and libraries.
+Although this has been true for the existence of the project, the project
+itself has evolved over the years to meet the demands of a growing community
+of users and developers who have an interest in adopting, building new and
+leveraging existing network functionality. To continue to stay true to
+its mission, and yet reduce the management burden, the project transformed
+itself into a pluggable framework, and a community where interested parties
+come together to discuss and define APIs and respective implementations that
+ultimately are delivered on top of the aforementioned pluggable framework.
+Some of these APIs and implementations are considered to be a part of the
+Neutron project. For the ones that are not, there is no connotation of
+_poor_ quality associated with them. Their association, or lack thereof, is
+simply a reflection of the fact that a good portion of Neutron team feels
+favorable towards developing, and supporting the project in the wider
+OpenStack ecosystem.
 
 Inclusion Process
 -----------------
@@ -74,10 +105,14 @@ Inclusion Criteria
 ------------------
 
 As mentioned before, the Neutron PTL must approve the inclusion of each
-additional repository under the Neutron project.  That evaluation will be
-initially based on the new project requirements used for all new OpenStack
-projects for the criteria that is applicable.  If there's any question about
-this, the review should be deferred to the TC as a new OpenStack project team.
+additional repository under the Neutron project. When in doubt, the PTL
+should consider erring on the side of caution, and keep the project out of
+the list until more consensus amongst the team can be built or a more
+favorable assessment can be determined.
+That evaluation will be initially based on the new project requirements used
+for all new OpenStack projects for the criteria that is applicable.  If
+there is any question about this, the review should be deferred to the TC
+as a new OpenStack project team.
 
     http://governance.openstack.org/reference/new-projects-requirements.html
 
@@ -85,7 +120,8 @@ Including *everything* related to Neutron under the Neutron project team has not
 scaled well, so some Neutron related projects are encouraged to form a new
 OpenStack project team.  The following list of guidelines are not hard rules.
 There may be exceptions.  Instead, they serve as criteria that may influence the
-decision one way or the other.
+decision one way or the other. Sub-projects will be reviewed regularly to see
+how they meet these criteria.
 
 These criteria are designed around how easy it would be for members of the
 loosely defined "Neutron team" to jump in and help fix or even take over a given
@@ -105,6 +141,14 @@ repository if needed.
   advanced service is more likely to make sense as an independent project.
   This is subject to change as the Neutron project evolves and continues to
   explore the boundaries that work best for the project.
+* OpenStack project teams are based around both technology and groups of people.
+  If a sub-project is directly driven by a subset of members of the Neutron team,
+  with the wider approval of the Neutron team, then it makes sense to retain it
+  under the Neutron project team.  Conversely, a project that was developed
+  without oversight or engagement of any of the Neutron members cannot qualify.
+  For the sake of this criterion, a member of the team is a known (core or not)
+  contributor with a substantial track record of Neutron development.
+
 
 Official Sub-Project List
 -------------------------
@@ -234,6 +278,23 @@ capabilities of Neutron, the Neutron API, or a combination of both.
 
 Project Teams FAQ
 ~~~~~~~~~~~~~~~~~
+
+**Q: When talking about contributor overlap, what is a contributor?**
+
+A Neutron contributor is someone who spends some portion of their time helping
+with all of the things needed to run the Neutron project: bug triage, writing
+and reviewing blueprints, writing and reviewing code, writing and reviewing
+documentation, helping debug issues found by users or CI, and more.
+
+**Q: Why choose contributor overlap over technical overlap?**
+
+Technical overlap, or software qualities, are more difficult to pinpoint and
+require a more extensive assessment from the PTL and the Neutron team, which
+in turn has the danger of translating itself into a nearly full-time
+policing/enforcement job. Wrongdoing will always be spotted, regardless of
+whichever criteria is applied, and trusting known members of the team to do
+the right thing should be an adequate safety net to preserve the sanity of
+Neutron as a whole.
 
 **Q: What does a sub-project gain as a part of the Neutron project team?**
 
